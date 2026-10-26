@@ -19,7 +19,12 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(
   cors({
-    origin: '*',
+    origin: [
+      'https://adinn-diwali.onrender.com',
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      ...(process.env.CORS_ORIGINS?.split(',').map(origin => origin.trim()).filter(Boolean) ?? []),
+    ],
     credentials: true,
   })
 );
