@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import dns from 'node:dns';
 import mongoose from 'mongoose';
 
-const DEFAULT_URI = 'mongodb://127.0.0.1:27017/adinn_diwali';
+// mongodb+srv:// needs SRV/TXT lookups, which some local resolvers refuse (ECONNREFUSED querySrv).
+dns.setServers(['8.8.8.8']);
 
 // Never log credentials: show only host(s) and database name.
 export const describeMongoUri = (uri: string): string => {
@@ -17,7 +19,8 @@ export const describeMongoUri = (uri: string): string => {
 export const isDatabaseConnected = (): boolean => mongoose.connection.readyState === 1;
 
 export const connectDB = async (): Promise<void> => {
-  const mongoUri = process.env.MONGODB_URI || DEFAULT_URI;
+  const mongoUri = process.env.MONGODB_URI;
+  if (!mongoUri) throw new Error('MONGODB_URI is not set. Add it to backend/.env.');
   // Fail fast instead of queueing queries on a dead connection.
   mongoose.set('bufferCommands', false);
   mongoose.connection.on('disconnected', () => console.error('[MongoDB] Connection lost. Database requests will return 503 until it reconnects.'));
@@ -32,7 +35,7 @@ export const connectDB = async (): Promise<void> => {
     // Explicit opt-in only. Never the default, never implied by NODE_ENV.
     if (process.env.USE_MEMORY_DB_IF_LOCAL_FAILS !== 'true') {
       throw new Error(
-        'MongoDB is unreachable. Start the MongoDB service (Windows: `net start MongoDB`) and check MONGODB_URI in backend/.env. ' +
+        'MongoDB is unreachable. Check MONGODB_URI in backend/.env and that your IP is allowed in Atlas Network Access. ' +
         'To run against a temporary development database instead, set USE_MEMORY_DB_IF_LOCAL_FAILS=true.'
       );
     }
