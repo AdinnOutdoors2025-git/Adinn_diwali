@@ -1,0 +1,25 @@
+{
+  "name": "adinn-diwali-sweet-distribution",
+  "version": "1.0.0",
+  "description": "Diwali Sweet Distribution Management System for Adinn Advertising",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "seed": "npm --prefix backend run seed",
+    "clean:bds": "npm --prefix backend run clean:bds"
+  },
+  "keywords": [
+    "diwali",
+    "distribution",
+    "management",
+    "adinn"
+  ],
+  "author": "Adinn Advertising",
+  "license": "ISC"
+}
+
