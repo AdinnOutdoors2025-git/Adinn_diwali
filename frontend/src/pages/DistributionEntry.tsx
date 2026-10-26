@@ -5,21 +5,21 @@ import { api, ApiError } from '../services/api';
 import { BD, DistributionRow, VERTICAL_OPTIONS, VerticalType } from '../types';
 import { InlineClientRow, ClientDraft } from '../components/InlineClientRow';
 import { Modal } from '../components/Modal';
+import { DEFAULT_YEAR, YEAR_OPTIONS } from '../config/diwaliYear';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../context/ToastContext';
 import { ClientManagement } from './ClientManagement';
 
 const dateLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '\u2014';
 const control = 'w-full px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20';
-// Diwali tracking starts in 2026; earlier years are intentionally not selectable.
-const YEAR_OPTIONS = [2026, 2027, 2028, 2029];
 type Status = 'ALL' | 'GIVEN' | 'NOT_GIVEN';
 
 export const DistributionEntry: React.FC = () => {
   const { success, info } = useToast();
   const [duplicate, setDuplicate] = useState<ClientDraft | null>(null);
+  const [duplicateMessage, setDuplicateMessage] = useState('');
   const [linking, setLinking] = useState(false);
-  const currentYear = Math.min(Math.max(new Date().getFullYear(), YEAR_OPTIONS[0]), YEAR_OPTIONS[YEAR_OPTIONS.length - 1]);
+  const currentYear = DEFAULT_YEAR;
   const [year, setYear] = useState(currentYear);
   const [vertical, setVertical] = useState('ALL');
   const [bd, setBD] = useState('ALL');
@@ -123,7 +123,7 @@ export const DistributionEntry: React.FC = () => {
       setDrafts(rows => rows.filter(row => row.key !== draft.key));
       success(result.message); await load();
     } catch (error: any) {
-      if (error instanceof ApiError && error.code === 'CLIENT_EXISTS') { changeDraft(draft.key, { saving: false }); setDuplicate(draft); }
+      if (error instanceof ApiError && error.code === 'CLIENT_EXISTS') { changeDraft(draft.key, { saving: false }); setDuplicateMessage(error.message); setDuplicate(draft); }
       else if (error instanceof ApiError && error.code === 'ASSOCIATION_EXISTS') { setDrafts(rows => rows.filter(row => row.key !== draft.key)); setDuplicate(null); info(error.message); }
       else changeDraft(draft.key, { saving: false, error: error.message || 'Unable to save client.' });
     }
@@ -156,7 +156,7 @@ export const DistributionEntry: React.FC = () => {
   return (
     <div className="space-y-4 min-w-0">
       <ConfirmDialog isOpen={!!duplicate} onClose={() => setDuplicate(null)} onConfirm={confirmDuplicate} isLoading={linking}
-        title="Client Already Exists!" message="This client/vendor is already registered. Do you want to add another Vertical and BD to the existing record?" confirmLabel="Yes, Add to Existing" cancelLabel="Cancel" />
+        title="Client Already Exists!" message={duplicateMessage} confirmLabel="Yes, Add to Existing" cancelLabel="Cancel" />
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-slate-900">Entry</h1>
         <button type="button" onClick={exportExcel} disabled={exporting || loading}

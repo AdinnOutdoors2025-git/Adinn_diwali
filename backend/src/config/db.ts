@@ -30,7 +30,7 @@ export const connectDB = async (): Promise<void> => {
   } catch (err: any) {
     console.error(`[MongoDB] Could not connect to ${describeMongoUri(mongoUri)}. Reason: ${err.message}`);
     // Explicit opt-in only. Never the default, never implied by NODE_ENV.
-    if (process.env.USE_MEMORY_DB_IF_LOCAL_FAILS !== 'true') {
+    if (process.env.NODE_ENV === 'production' || process.env.USE_MEMORY_DB_IF_LOCAL_FAILS !== 'true') {
       throw new Error(
         'MongoDB is unreachable. Start the MongoDB service (Windows: `net start MongoDB`) and check MONGODB_URI in backend/.env. ' +
         'To run against a temporary development database instead, set USE_MEMORY_DB_IF_LOCAL_FAILS=true.'

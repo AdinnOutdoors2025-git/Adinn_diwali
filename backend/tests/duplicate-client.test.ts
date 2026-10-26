@@ -49,8 +49,8 @@ try {
   ok('existing Vertical+BD association returns informative 409 ASSOCIATION_EXISTS');
 
   r = await call('/clients', { name: 'Acme Media', mobile: '9000000001', vertical: 'Outdoor', bd: String(bd1._id) });
-  assert.equal(r.status, 409); assert.equal(r.body.code, 'NAME_CONFLICT'); assert.equal(await Client.countDocuments(), 1);
-  ok('same name with different phone is rejected (NAME_CONFLICT)');
+  assert.equal(r.status, 409); assert.equal(r.body.code, 'CLIENT_EXISTS'); assert.equal(r.body.matchedBy, 'name'); assert.equal(await Client.countDocuments(), 1);
+  ok('same name with different phone offers the existing-client flow (CLIENT_EXISTS, matchedBy name)');
 
   const racers = await Promise.all(Array.from({ length: 8 }, () => call('/clients', { name: 'Race Co', mobile: '9111111111', vertical: 'Roadshow', bd: String(bd1._id) })));
   assert.equal(racers.filter(x => x.status === 201).length, 1);

@@ -147,44 +147,44 @@ export const createClient = async (req: Request, res: Response): Promise<void> =
     const normName = normalizeName(name);
     const confirmExisting = req.body.confirmExisting === true;
 
-    // 1. Phone number is the primary identity; the normalized name is a secondary check.
-    let client = await Client.findOne({ normalizedMobile: normMobile });
-    if (!client) {
-      const nameOwner = await Client.findOne({ normalizedName: normName });
-      if (nameOwner) {
-        res.status(409).json({
-          success: false,
-          code: 'NAME_CONFLICT',
-          message: `A client named "${nameOwner.name}" is already registered with a different phone number (${nameOwner.mobile}). Use that phone number to add another Vertical and BD.`,
-        });
-        return;
-      }
+    // 1. Identity is global and year-independent: phone number first, then the exact normalized name
+    //    (trimmed, whitespace-collapsed, case-insensitive). Similar-but-different names are never merged.
+    const findExisting = async () => {
+      const byMobile = await Client.findOne({ normalizedMobile: normMobile });
+      if (byMobile) return { client: byMobile, matchedBy: 'mobile' as const };
+      const byName = await Client.findOne({ normalizedName: normName });
+      return byName ? { client: byName, matchedBy: 'name' as const } : null;
+    };
+    let match = await findExisting();
+    let isNew = false;
+    if (!match) {
       try {
-        client = await Client.create({ name: name.trim(), normalizedName: normName, mobile: mobile.trim(), normalizedMobile: normMobile, email: trimmedEmail });
-        const association = await ClientAssociation.create({ client: client._id, vertical, bd });
+        const created = await Client.create({ name: name.trim(), normalizedName: normName, mobile: mobile.trim(), normalizedMobile: normMobile, email: trimmedEmail });
+        const association = await ClientAssociation.create({ client: created._id, vertical, bd });
         res.status(201).json({
           success: true,
           message: 'Client registered and associated successfully',
-          data: { _id: association._id, clientId: client._id, name: client.name, mobile: client.mobile, email: client.email, vertical, bd: bdExists, createdAt: association.createdAt },
+          data: { _id: association._id, clientId: created._id, name: created.name, mobile: created.mobile, email: created.email, vertical, bd: bdExists, createdAt: association.createdAt },
         });
         return;
       } catch (error: any) {
         if (error.code !== 11000) throw error;
         // A concurrent request created this identity first: fall through to the existing-client path.
-        client = await Client.findOne({ normalizedMobile: normMobile });
-        if (!client) {
-          res.status(409).json({ success: false, code: 'NAME_CONFLICT', message: 'A client with this name is already registered.' });
-          return;
-        }
+        match = await findExisting();
+        if (!match) throw error;
       }
     }
+    const client = match.client;
 
     // 2. Existing client: never create it again; require explicit confirmation to add an association.
     if (!confirmExisting) {
       res.status(409).json({
         success: false,
         code: 'CLIENT_EXISTS',
-        message: 'This client/vendor is already registered. Do you want to add another Vertical and BD to the existing record?',
+        matchedBy: match.matchedBy,
+        message: match.matchedBy === 'mobile'
+          ? 'This client/vendor is already registered. Do you want to add another Vertical and BD to the existing record?'
+          : `A client named "${client.name}" is already registered with phone ${client.mobile}. Do you want to add another Vertical and BD to that existing record?`,
         existingClient: { clientId: client._id, name: client.name, mobile: client.mobile, email: client.email || '' },
       });
       return;

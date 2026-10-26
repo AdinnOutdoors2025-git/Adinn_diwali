@@ -5,6 +5,7 @@ import { ClientAssociation, VALID_VERTICALS, VerticalType } from '../models/Clie
 import { Client } from '../models/Client.js';
 import { BD } from '../models/BD.js';
 import { AuthRequest } from '../middleware/auth.js';
+import { FIRST_DIWALI_YEAR, isRecordableYear } from '../config/diwaliYear.js';
 
 export const getDistributionRecords = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -75,8 +76,8 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
     }
 
     const distributionYear = parseInt(year, 10);
-    if (!distributionYear || distributionYear < 2000 || distributionYear > 2100) {
-      res.status(400).json({ success: false, message: 'Valid distribution year is required' });
+    if (!isRecordableYear(distributionYear)) {
+      res.status(400).json({ success: false, message: `Distribution year must be ${FIRST_DIWALI_YEAR} or later.` });
       return;
     }
 
