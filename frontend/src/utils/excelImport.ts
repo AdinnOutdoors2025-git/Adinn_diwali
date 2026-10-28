@@ -1,10 +1,10 @@
 import * as XLSX from 'xlsx';
 import { BD } from '../types';
-import { MAX_ALLOWED_QUANTITY, TYPE_OPTIONS, ClientType } from '../config/distribution';
+import { TYPE_OPTIONS, ClientType } from '../config/distribution';
 
 export const IMPORT_MAX_ROWS = 5000;
 export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
-export const IMPORT_COLUMNS = ['Client/Vendor Name', 'Mobile Number', 'Email ID', 'Type', 'Requestee Email', 'Allowed Quantity'] as const;
+export const IMPORT_COLUMNS = ['Client/Vendor Name', 'Mobile Number', 'Email ID', 'Type', 'Requestee Email'] as const;
 
 export interface ImportRow {
   index: number;
@@ -13,7 +13,6 @@ export interface ImportRow {
   email: string;
   type: string;
   requestee: string;
-  allowedQuantity: number;
   status: 'valid' | 'duplicate' | 'invalid';
   reason: string;
 }
@@ -27,7 +26,6 @@ const ALIASES: Record<string, string[]> = {
   email: ['emailid', 'email', 'emailaddress'],
   type: ['type'],
   requestee: ['requesteeemail', 'requesteename', 'requestee'],
-  quantity: ['allowedquantity', 'quantity'],
 };
 
 // Reads one cell by any accepted header spelling; the first non-empty alias wins.
@@ -49,8 +47,8 @@ export function parseImportRows(rows: Record<string, unknown>[], bds: BD[]): Imp
   const seen = new Set<string>();
   return rows.map((row, index) => {
     const name = pick(row, 'name'), mobile = pick(row, 'mobile'), email = pick(row, 'email').toLowerCase();
-    const type = pick(row, 'type'), requestee = pick(row, 'requestee'), quantityText = pick(row, 'quantity');
-    const base = { index: index + 1, name, mobile, email, type, requestee, allowedQuantity: 1 };
+    const type = pick(row, 'type'), requestee = pick(row, 'requestee');
+    const base = { index: index + 1, name, mobile, email, type, requestee };
     const bad = (reason: string): ImportRow => ({ ...base, status: 'invalid', reason });
     if (!name) return bad('Missing name');
     if (!/^\d{10}$/.test(mobile)) return bad('Phone must be exactly 10 digits (numbers only)');
@@ -60,13 +58,8 @@ export function parseImportRows(rows: Record<string, unknown>[], bds: BD[]): Imp
     if (!requestee) return bad('Missing requestee');
     const bd = lookup.get(requestee.toLowerCase()) ?? lookup.get(normalizeName(requestee));
     if (!bd) return bad(lookup.has(requestee.toLowerCase()) || lookup.has(normalizeName(requestee)) ? 'Requestee name is ambiguous - use the email' : `Requestee "${requestee}" not found`);
-    let allowedQuantity = 1;
-    if (quantityText) {
-      allowedQuantity = /^\d+$/.test(quantityText) ? Number(quantityText) : NaN;
-      if (!(allowedQuantity >= 1 && allowedQuantity <= MAX_ALLOWED_QUANTITY)) return bad(`Allowed quantity must be 1 to ${MAX_ALLOWED_QUANTITY}`);
-    }
     const key = `${normalizeMobile(mobile) || normalizeName(name)}|${matchedType}|${bd._id}`;
-    const resolved = { ...base, type: matchedType, requestee: bd.email, allowedQuantity };
+    const resolved = { ...base, type: matchedType, requestee: bd.email };
     if (seen.has(key)) return { ...resolved, status: 'duplicate', reason: 'Duplicate in file' };
     seen.add(key);
     return { ...resolved, status: 'valid', reason: 'Ready' };
@@ -74,7 +67,7 @@ export function parseImportRows(rows: Record<string, unknown>[], bds: BD[]): Imp
 }
 
 export const toImportRecords = (rows: ImportRow[]) => rows.filter(row => row.status === 'valid').map(row => ({
-  name: row.name, mobile: row.mobile, email: row.email, type: row.type as ClientType, requestee: row.requestee, allowedQuantity: row.allowedQuantity,
+  name: row.name, mobile: row.mobile, email: row.email, type: row.type as ClientType, requestee: row.requestee,
 }));
 
 export async function readWorkbookRows(file: File): Promise<Record<string, unknown>[]> {
@@ -85,11 +78,11 @@ export async function readWorkbookRows(file: File): Promise<Record<string, unkno
 
 export function downloadTemplate() {
   const rows = [
-    ['Acme Global Media Ltd', '9876543210', 'contact@acmeglobal.com', 'Client', 'requestee@adinn.co.in', 2],
-    ['Apex Billboard Enterprises', '9812345678', 'sales@apexenterprise.com', 'Vendor', 'requestee@adinn.co.in', 1],
+    ['Acme Global Media Ltd', '9876543210', 'contact@acmeglobal.com', 'Client', 'requestee@adinn.co.in'],
+    ['Apex Billboard Enterprises', '9812345678', 'sales@apexenterprise.com', 'Vendor', 'requestee@adinn.co.in'],
   ];
   const sheet = XLSX.utils.aoa_to_sheet([[...IMPORT_COLUMNS], ...rows]);
-  sheet['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 28 }, { wch: 16 }, { wch: 28 }, { wch: 16 }];
+  sheet['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 28 }, { wch: 16 }, { wch: 28 }];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, 'Clients_Vendors');
   XLSX.writeFile(book, 'Diwali_Client_Import_Template.xlsx');

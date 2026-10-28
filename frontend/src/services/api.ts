@@ -145,7 +145,7 @@ export const api = {
     }>(res);
   },
 
-  async createClient(data: { type: ClientType; bd: string; name: string; mobile: string; email?: string; allowedQuantity?: number; confirmExisting?: boolean }) {
+  async createClient(data: { type: ClientType; bd: string; name: string; mobile: string; email?: string; confirmExisting?: boolean }) {
     const res = await fetch(`${API_BASE_URL}/clients`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -154,7 +154,7 @@ export const api = {
     return handleResponse<{ success: boolean; message: string; data: ClientRecord }>(res);
   },
 
-  async updateClient(id: string, data: { name?: string; mobile?: string; email?: string; allowedQuantity?: number; type?: ClientType }) {
+  async updateClient(id: string, data: { name?: string; mobile?: string; email?: string; type?: ClientType }) {
     const res = await fetch(`${API_BASE_URL}/clients/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
@@ -171,7 +171,7 @@ export const api = {
     return handleResponse<{ success: boolean; message: string }>(res);
   },
 
-  async bulkImportClients(records: Array<{ name: string; mobile: string; email?: string; type: ClientType; requestee: string; allowedQuantity?: number }>) {
+  async bulkImportClients(records: Array<{ name: string; mobile: string; email?: string; type: ClientType; requestee: string }>) {
     const res = await fetch(`${API_BASE_URL}/clients/bulk-import`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -249,7 +249,6 @@ export const api = {
     year: number;
     type: ClientType;
     bd: string;
-    quantity: number;
     mode: DistributionMode;
     notes?: string;
   }) {

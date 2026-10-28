@@ -65,9 +65,9 @@ try {
 
   const acme = (await Client.findOne({ normalizedMobile: '9876543210' }))!;
   const year = new Date().getFullYear();
-  r = await call('/distributions', { clientId: String(acme._id), year, type: 'Vendor', bd: String(bd1._id), quantity: 1, mode: 'IN_PERSON' });
+  r = await call('/distributions', { clientId: String(acme._id), year, type: 'Vendor', bd: String(bd1._id), mode: 'IN_PERSON' });
   assert.equal(r.status, 201, JSON.stringify(r.body));
-  r = await call('/distributions', { clientId: String(acme._id), year, type: 'Client', bd: String(bd2._id), quantity: 1, mode: 'IN_PERSON' });
+  r = await call('/distributions', { clientId: String(acme._id), year, type: 'Client', bd: String(bd2._id), mode: 'IN_PERSON' });
   assert.ok(r.status >= 400, `second sweet in same year must be rejected, got ${r.status}`);
   assert.equal(await SweetDistribution.countDocuments({ client: acme._id, isReverted: { $ne: true } }), 1);
   ok('annual rule: second distribution in same year across another Type/Requestee rejected');

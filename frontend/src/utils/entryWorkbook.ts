@@ -119,15 +119,15 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
   chartRows.forEach((row, index) => [row.name, row.email, row.registered, row.given, row.pending, row.credited].forEach((value, column) => put(index + 34, column + 1, value, column >= 2 ? 10 : 4)));
   const chartTop = Math.max(40, chartRows.length + 37), chartBottom = chartTop + 19;
 
-  const headings = ['S.No.', 'Client/Vendor Name', 'Phone Number', 'Email', 'Type', 'Requestee Name', 'Requestee Email', 'Created At (IST)', 'Distribution Year', 'Allowed Quantity', 'Distribution Quantity', 'Mode', 'Status', 'Distribution Status', 'Distribution Marked', 'Last Given Year'];
+  const headings = ['S.No.', 'Client/Vendor Name', 'Phone Number', 'Email', 'Type', 'Requestee Name', 'Requestee Email', 'Created At (IST)', 'Distribution Year', 'Distribution Quantity', 'Mode', 'Status', 'Distribution Status', 'Distribution Marked', 'Last Given Year'];
   const details: Matrix = [headings];
   const detailHeights: Record<number, number> = { 1: 36 };
-  const STATUS_COL = 13, DATE_COLS = [7, 14], NUMBER_COLS = [0, 8, 9, 10, 15];
+  const STATUS_COL = 12, DATE_COLS = [7, 13], NUMBER_COLS = [0, 8, 9, 14];
   rows.forEach((row, index) => {
     const given = row.currentYearDistribution;
     const values: Value[] = [index + 1, row.clientName, row.clientMobile, row.clientEmail || '', row.associations.map(link => link.type ?? 'Unassigned').join('\n'),
       row.associations.map(link => link.bd?.name || '').join('\n'), row.associations.map(link => link.bd?.email || '').join('\n'), dateText(row.createdAt), filters.year,
-      row.allowedQuantity ?? 1, given?.quantity ?? '', given?.mode ? MODE_LABEL[given.mode] : '', given?.status ? STATUS_LABEL[given.status] : '',
+      given?.quantity ?? '', given?.mode ? MODE_LABEL[given.mode] : '', given?.status ? STATUS_LABEL[given.status] : '',
       row.isEligible ? 'Not Given' : 'Given', dateText(given?.distributedAt), row.lastGiven ?? ''];
     details.push(values.map((value, column) => ({ value, style: column === STATUS_COL ? (row.isEligible ? 8 : 6) + index % 2 : DATE_COLS.includes(column) ? 14 + index % 2 : NUMBER_COLS.includes(column) ? 24 + index % 2 : 4 + index % 2 })));
     detailHeights[index + 2] = Math.max(34, row.associations.length * 18 + 14);
@@ -139,7 +139,7 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
     'xl/styles.xml': styles(),
     'xl/worksheets/sheet1.xml': worksheet(summary, { widths: [28, 30, 16, 18, 20, 20, 16, 16, 16, 16, 16, 16], frozen: 7, merges, drawing: true, minRows: chartBottom, defaultHeight: 24, pageBreak: chartTop,
       heights: { ...Object.fromEntries(Array.from({ length: chartBottom - chartTop + 1 }, (_, index) => [chartTop + index + 1, 16])), 1: 30, 2: 10, 3: 26, 4: 32, 5: 28, 6: 26, 7: 10, 8: 32, 9: 30, 10: 10, 11: 10, 12: 26, 13: 32, 14: 36, 15: 32, 16: 10, 17: 30, 21: 32, 33: 32 } }),
-    'xl/worksheets/sheet2.xml': worksheet(details, { widths: [8, 32, 20, 30, 26, 30, 32, 26, 16, 16, 18, 14, 16, 20, 26, 16], filter: true, heights: detailHeights }),
+    'xl/worksheets/sheet2.xml': worksheet(details, { widths: [8, 32, 20, 30, 26, 30, 32, 26, 16, 18, 14, 16, 20, 26, 16], filter: true, heights: detailHeights }),
     'xl/worksheets/sheet3.xml': worksheet(typeTable, { widths: [30, 26, 16, 18, 24, 22], filter: true }),
     'xl/worksheets/sheet4.xml': worksheet(bdTable, { widths: [34, 38, 26, 22, 18, 26, 24], filter: true }),
   };
@@ -154,7 +154,7 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
   parts['xl/drawings/_rels/drawing1.xml.rels'] = declaration + `<Relationships xmlns="${ns.package}">${[1, 2].map(index => `<Relationship Id="rId${index}" Type="${ns.rel}/chart" Target="../charts/chart${index}.xml"/>`).join('')}</Relationships>`;
   parts['xl/worksheets/_rels/sheet1.xml.rels'] = declaration + `<Relationships xmlns="${ns.package}"><Relationship Id="rIdDrawing" Type="${ns.rel}/drawing" Target="../drawings/drawing1.xml"/></Relationships>`;
   const sheetNames = ['Summary', 'Distribution Details', 'Type Analytics', 'Requestee Analytics'];
-  const printAreas = [`A1:L${chartBottom + 1}`, `A1:P${details.length}`, `A1:F${typeTable.length}`, `A1:G${bdTable.length}`];
+  const printAreas = [`A1:L${chartBottom + 1}`, `A1:O${details.length}`, `A1:F${typeTable.length}`, `A1:G${bdTable.length}`];
   parts['xl/workbook.xml'] = declaration + `<workbook xmlns="${ns.sheet}" xmlns:r="${ns.rel}"><bookViews><workbookView/></bookViews><sheets>${sheetNames.map((name, index) => `<sheet name="${name}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join('')}</sheets><definedNames>${sheetNames.map((name, index) => `<definedName name="_xlnm.Print_Titles" localSheetId="${index}">'${xml(name)}'!$1:$${index ? 1 : 6}</definedName><definedName name="_xlnm.Print_Area" localSheetId="${index}">'${xml(name)}'!${printAreas[index]}</definedName>`).join('')}</definedNames></workbook>`;
   parts['xl/_rels/workbook.xml.rels'] = declaration + `<Relationships xmlns="${ns.package}">${[1, 2, 3, 4].map(index => `<Relationship Id="rId${index}" Type="${ns.rel}/worksheet" Target="worksheets/sheet${index}.xml"/>`).join('')}<Relationship Id="rIdStyles" Type="${ns.rel}/styles" Target="styles.xml"/></Relationships>`;
   parts['_rels/.rels'] = declaration + `<Relationships xmlns="${ns.package}"><Relationship Id="rIdWorkbook" Type="${ns.rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`;

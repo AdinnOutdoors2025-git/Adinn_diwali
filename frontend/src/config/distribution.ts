@@ -13,6 +13,6 @@ export const STATUS_FLOW: Record<DistributionMode, readonly DeliveryStatus[]> = 
   IN_PERSON: ['INITIATE', 'DELIVERED'],
 };
 
-export const MAX_ALLOWED_QUANTITY = 1000;
+// Every distribution is exactly this many; the server sets it, so it cannot be edited from the browser.
+export const DISTRIBUTION_QUANTITY = 5;
 export const MAX_PROOF_MB = 5;
-export const clampQuantity = (value: number, max: number) => Math.min(Math.max(1, Math.trunc(value) || 1), Math.max(1, max));

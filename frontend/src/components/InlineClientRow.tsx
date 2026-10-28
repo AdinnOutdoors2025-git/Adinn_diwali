@@ -1,6 +1,5 @@
 import React from 'react';
 import { BD, TYPE_OPTIONS } from '../types';
-import { MAX_ALLOWED_QUANTITY } from '../config/distribution';
 import { SearchableSelect } from './SearchableSelect';
 
 export interface ClientDraft {
@@ -15,7 +14,6 @@ export interface ClientDraft {
   originalMobile?: string;
   type?: string;
   bd?: string;
-  allowedQuantity?: string;
   /** Existing Type on an edited record; only records created before Type existed may be assigned one. */
   typeLocked?: boolean;
 }
@@ -55,11 +53,6 @@ export const InlineClientRow: React.FC<Props> = ({ draft, onChange, onSave, onCa
         placeholder={bdState === 'loading' ? 'Loading Requestees...' : bdState === 'error' ? 'Requestees unavailable' : !distributionBDs.length ? 'No Requestees available' : 'Select Requestee'}
         options={distributionBDs.map(bd => ({ value: bd._id, label: bd.name, subtext: bd.email }))} /></td>
       <td className="p-4 text-slate-500">{distributionBDs.find(bd => bd._id === draft.bd)?.email || '—'}</td>
-      <td className="p-4"><input aria-label="Allowed Quantity" type="number" inputMode="numeric" min={1} max={MAX_ALLOWED_QUANTITY} step={1}
-        value={draft.allowedQuantity ?? '1'} disabled={draft.saving}
-        onChange={event => onChange({ allowedQuantity: event.target.value, error: '' })}
-        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); onSave(); } }}
-        className="w-20 px-3 py-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 disabled:opacity-60" /></td>
       <td className="p-4 text-slate-400">&mdash;</td><td className="p-4 text-slate-400">&mdash;</td>
       <td className="p-4 text-slate-400">&mdash;</td><td className="p-4 text-slate-400">&mdash;</td>
     </>}

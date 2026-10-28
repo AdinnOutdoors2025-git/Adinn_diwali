@@ -73,7 +73,7 @@ async function main() {
 
     // Yearly distribution
     const acme = (await Client.findOne({ normalizedName: 'abc technologies' }))!;
-    const dist = (year: number, type = 'Vendor', bd = bd1) => call('POST', '/distributions', { clientId: String(acme._id), year, type, bd: String(bd._id), quantity: 1, mode: 'IN_PERSON' });
+    const dist = (year: number, type = 'Vendor', bd = bd1) => call('POST', '/distributions', { clientId: String(acme._id), year, type, bd: String(bd._id), mode: 'IN_PERSON' });
     const d2026 = await dist(2026);
     assert.equal(d2026.status, 201); ok('2026 distribution created');
     const before = await SweetDistribution.findById(d2026.body.data._id).lean();

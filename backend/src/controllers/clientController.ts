@@ -3,8 +3,7 @@ import mongoose from 'mongoose';
 import * as XLSX from 'xlsx';
 import { Client } from '../models/Client.js';
 import { ClientAssociation } from '../models/ClientAssociation.js';
-import { SweetDistribution } from '../models/SweetDistribution.js';
-import { CLIENT_TYPES, MAX_ALLOWED_QUANTITY, isClientType, parseWholeNumber } from '../config/distribution.js';
+import { CLIENT_TYPES, isClientType } from '../config/distribution.js';
 import { BD } from '../models/BD.js';
 import { findOrCreateClient, normalizeName, normalizeMobile, isValidMobile, isTenDigitMobile, PHONE_MESSAGE } from '../utils/normalize.js';
 
@@ -12,14 +11,6 @@ import { findOrCreateClient, normalizeName, normalizeMobile, isValidMobile, isTe
 const isValidEmail = (email?: string): boolean => {
   if (!email || !email.trim()) return true;
   return /^\S+@\S+\.\S+$/.test(email.trim());
-};
-
-// Undefined means "not supplied" (callers apply a default); anything else must be a whole number in range.
-const parseAllowedQuantity = (value: unknown): { value?: number; error?: string } => {
-  if (value === undefined || value === null || value === '') return {};
-  const parsed = parseWholeNumber(value);
-  if (parsed === null || parsed < 1 || parsed > MAX_ALLOWED_QUANTITY) return { error: `Allowed Quantity must be a whole number between 1 and ${MAX_ALLOWED_QUANTITY}` };
-  return { value: parsed };
 };
 
 export const getClients = async (req: Request, res: Response): Promise<void> => {
@@ -97,7 +88,6 @@ export const getClients = async (req: Request, res: Response): Promise<void> => 
         name: a.client.name,
         mobile: a.client.mobile,
         email: a.client.email || '',
-        allowedQuantity: a.client.allowedQuantity ?? 1,
         createdAt: a.createdAt,
         updatedAt: a.updatedAt,
       }));
@@ -148,12 +138,6 @@ export const createClient = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const quantity = parseAllowedQuantity(req.body.allowedQuantity);
-    if (quantity.error) {
-      res.status(400).json({ success: false, message: quantity.error });
-      return;
-    }
-
     const bdExists = await BD.findById(bd);
     if (!bdExists) {
       res.status(404).json({ success: false, message: 'Selected Requestee not found in system' });
@@ -176,12 +160,12 @@ export const createClient = async (req: Request, res: Response): Promise<void> =
     let isNew = false;
     if (!match) {
       try {
-        const created = await Client.create({ name: name.trim(), normalizedName: normName, mobile: mobile.trim(), normalizedMobile: normMobile, email: trimmedEmail, allowedQuantity: quantity.value ?? 1 });
+        const created = await Client.create({ name: name.trim(), normalizedName: normName, mobile: mobile.trim(), normalizedMobile: normMobile, email: trimmedEmail });
         const association = await ClientAssociation.create({ client: created._id, type, bd });
         res.status(201).json({
           success: true,
           message: 'Client registered and associated successfully',
-          data: { _id: association._id, clientId: created._id, name: created.name, mobile: created.mobile, email: created.email, allowedQuantity: created.allowedQuantity, type, bd: bdExists, createdAt: association.createdAt },
+          data: { _id: association._id, clientId: created._id, name: created.name, mobile: created.mobile, email: created.email, type, bd: bdExists, createdAt: association.createdAt },
         });
         return;
       } catch (error: any) {
@@ -202,7 +186,7 @@ export const createClient = async (req: Request, res: Response): Promise<void> =
         message: match.matchedBy === 'mobile'
           ? 'This client/vendor is already registered. Do you want to add another Type and Requestee to the existing record?'
           : `A client named "${client.name}" is already registered with phone ${client.mobile}. Do you want to add another Type and Requestee to that existing record?`,
-        existingClient: { clientId: client._id, name: client.name, mobile: client.mobile, email: client.email || '', allowedQuantity: client.allowedQuantity ?? 1 },
+        existingClient: { clientId: client._id, name: client.name, mobile: client.mobile, email: client.email || '' },
       });
       return;
     }
@@ -224,7 +208,7 @@ export const createClient = async (req: Request, res: Response): Promise<void> =
     res.status(201).json({
       success: true,
       message: `Added "${type}" and ${bdExists.name} to existing client "${client.name}"`,
-      data: { _id: association._id, clientId: client._id, name: client.name, mobile: client.mobile, email: client.email, allowedQuantity: client.allowedQuantity ?? 1, type, bd: bdExists, createdAt: association.createdAt },
+      data: { _id: association._id, clientId: client._id, name: client.name, mobile: client.mobile, email: client.email, type, bd: bdExists, createdAt: association.createdAt },
     });
   } catch (error: any) {
     console.error('Error creating client:', error);
@@ -243,12 +227,6 @@ export const updateClient = async (req: Request, res: Response): Promise<void> =
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({ success: false, message: 'Invalid ID' });
-      return;
-    }
-
-    const quantity = parseAllowedQuantity(req.body.allowedQuantity);
-    if (quantity.error || (req.body.allowedQuantity === null || req.body.allowedQuantity === '')) {
-      res.status(400).json({ success: false, message: quantity.error || `Allowed Quantity must be a whole number between 1 and ${MAX_ALLOWED_QUANTITY}` });
       return;
     }
 
@@ -329,27 +307,7 @@ export const updateClient = async (req: Request, res: Response): Promise<void> =
       await association.save();
     }
 
-    // Lowering Allowed Quantity must not undercut a distribution that is still in progress. The check runs
-    // before and after the write: a distribution created concurrently runs the mirror check, so one side always loses.
-    const previousQuantity = client.allowedQuantity ?? 1;
-    const lowering = quantity.value !== undefined && quantity.value < previousQuantity;
-    const overLimit = (limit: number) => SweetDistribution.exists({ client: client._id, isReverted: { $ne: true }, status: { $ne: 'DELIVERED' }, quantity: { $gt: limit } });
-    if (quantity.value !== undefined) {
-      if (lowering && await overLimit(quantity.value)) {
-        res.status(409).json({ success: false, message: `Allowed Quantity cannot be lower than the quantity of a distribution that is still in progress.` });
-        return;
-      }
-      client.allowedQuantity = quantity.value;
-    }
-
     await client.save();
-
-    if (lowering && await overLimit(quantity.value!)) {
-      client.allowedQuantity = previousQuantity;
-      await client.save();
-      res.status(409).json({ success: false, message: 'A distribution was recorded at the higher quantity while saving. Allowed Quantity was not changed.' });
-      return;
-    }
 
     res.status(200).json({
       success: true,
@@ -360,7 +318,6 @@ export const updateClient = async (req: Request, res: Response): Promise<void> =
         name: client.name,
         mobile: client.mobile,
         email: client.email,
-        allowedQuantity: client.allowedQuantity ?? 1,
         type: association.type,
         bd: association.bd,
       },
@@ -462,9 +419,6 @@ export const bulkImportClients = async (req: Request, res: Response): Promise<vo
       const bd = requesteeRaw ? bdByKey.get(requesteeRaw.toLowerCase()) ?? bdByKey.get(normalizeName(requesteeRaw)) : defaultBDDoc;
       if (!bd) { fail(`${label}: ${requesteeRaw ? `Requestee "${requesteeRaw}" was not found or is ambiguous (use the email)` : 'Requestee is required'}`); continue; }
 
-      const quantity = parseAllowedQuantity(row.allowedQuantity ?? row['Allowed Quantity']);
-      if (quantity.error) { fail(`${label}: ${quantity.error}`); continue; }
-
       const batchKey = `${normalizeMobile(mobile) || normalizeName(name)}|${type}|${bd._id}`;
       if (seenInBatch.has(batchKey)) {
         duplicates++;
@@ -473,8 +427,8 @@ export const bulkImportClients = async (req: Request, res: Response): Promise<vo
       }
       seenInBatch.add(batchKey);
 
-      // Find or create master client (an existing client keeps its own Allowed Quantity)
-      const { client } = await findOrCreateClient({ name, mobile, email, allowedQuantity: quantity.value });
+      // Find or create master client
+      const { client } = await findOrCreateClient({ name, mobile, email });
 
       const existing = await ClientAssociation.findOne({ client: client._id, type, bd: bd._id });
       if (existing) {

@@ -3,11 +3,10 @@ import { Plus, Search, RefreshCw, Upload, Download, Gift, RotateCcw, Paperclip, 
 import { buildEntryWorkbook } from '../utils/entryWorkbook';
 import { api, ApiError } from '../services/api';
 import { BD, DistributionRow, TYPE_OPTIONS, ClientType } from '../types';
-import { DeliveryStatus, DistributionMode, MAX_ALLOWED_QUANTITY, MAX_PROOF_MB, MODE_LABEL, MODE_OPTIONS, STATUS_FLOW, STATUS_LABEL, clampQuantity } from '../config/distribution';
+import { DISTRIBUTION_QUANTITY, DeliveryStatus, DistributionMode, MAX_PROOF_MB, MODE_LABEL, MODE_OPTIONS, STATUS_FLOW, STATUS_LABEL } from '../config/distribution';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { YearPicker } from '../components/YearPicker';
 import { AddRequesteeModal } from '../components/AddRequesteeModal';
-import { QuantityStepper } from '../components/QuantityStepper';
 import { StatusDropdown } from '../components/StatusDropdown';
 import { InlineClientRow, ClientDraft } from '../components/InlineClientRow';
 import { Modal } from '../components/Modal';
@@ -54,7 +53,6 @@ export const DistributionEntry: React.FC = () => {
   const [actionYear, setActionYear] = useState(currentYear);
   const [association, setAssociation] = useState('');
   const [distMode, setDistMode] = useState<DistributionMode | ''>('');
-  const [quantity, setQuantity] = useState(1);
   const [statusBusy, setStatusBusy] = useState<string | null>(null);
   const [proofTarget, setProofTarget] = useState<{ row: DistributionRow; next: DeliveryStatus } | null>(null);
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -135,13 +133,13 @@ export const DistributionEntry: React.FC = () => {
     onSave={() => saveClient(draft)} onCancel={() => setDrafts(rows => rows.filter(row => row.key !== draft.key))} />;
   const draftKey = () => `client-${++nextDraft.current}`;
   const addClient = () => setDrafts(rows => [...rows, { key: draftKey(), name: '', mobile: '', email: '', type: type === 'ALL' ? '' : type, bd: bd === 'ALL' ? '' : bd,
-    allowedQuantity: '1', saving: false, error: '' }]);
+    saving: false, error: '' }]);
   // Edits a row in place: its draft replaces the row until it is saved or cancelled.
   const editClient = (row: DistributionRow) => {
     const associationId = row.associationId;
     if (!associationId || drafts.some(draft => draft.associationId === associationId)) return;
     setDrafts(rows => [...rows, { key: draftKey(), name: row.clientName, mobile: row.clientMobile, originalMobile: row.clientMobile, email: row.clientEmail,
-      type: row.type || '', bd: row.bd?._id || '', allowedQuantity: String(row.allowedQuantity ?? 1), typeLocked: !!row.type,
+      type: row.type || '', bd: row.bd?._id || '', typeLocked: !!row.type,
       associationId, saving: false, error: '' }]);
   };
   const saveClient = async (draft: ClientDraft, confirmExisting = false) => {
@@ -152,15 +150,14 @@ export const DistributionEntry: React.FC = () => {
       : !(/^\d{10}$/.test(draft.mobile) || untouchedLegacy) ? 'Phone number must be exactly 10 digits (numbers only).'
       : draft.email.trim() && !/^\S+@\S+\.\S+$/.test(draft.email.trim()) ? 'Enter a valid email or leave it empty.'
       : !draft.type || !draft.bd ? 'Select a Type and Requestee Name.'
-      : !/^\d+$/.test((draft.allowedQuantity ?? '').trim()) || Number(draft.allowedQuantity) < 1 || Number(draft.allowedQuantity) > MAX_ALLOWED_QUANTITY ? `Allowed Quantity must be a whole number from 1 to ${MAX_ALLOWED_QUANTITY}.` : '';
+      : '';
     if (validation) { changeDraft(draft.key, { error: validation }); return; }
     savingRows.current.add(draft.key); changeDraft(draft.key, { saving: true, error: '' });
     try {
       const fields = { name: draft.name.trim(), mobile: draft.mobile.trim(), email: draft.email.trim() };
-      const allowedQuantity = Number(draft.allowedQuantity);
       const result = draft.associationId
-        ? await api.updateClient(draft.associationId, { ...fields, allowedQuantity, ...(draft.typeLocked ? {} : { type: draft.type as ClientType }) })
-        : await api.createClient({ ...fields, type: draft.type as ClientType, bd: draft.bd!, allowedQuantity, ...(confirmExisting ? { confirmExisting: true } : {}) });
+        ? await api.updateClient(draft.associationId, { ...fields, ...(draft.typeLocked ? {} : { type: draft.type as ClientType }) })
+        : await api.createClient({ ...fields, type: draft.type as ClientType, bd: draft.bd!, ...(confirmExisting ? { confirmExisting: true } : {}) });
       setDrafts(rows => rows.filter(row => row.key !== draft.key));
       success(result.message); await load();
     } catch (error: any) {
@@ -176,7 +173,7 @@ export const DistributionEntry: React.FC = () => {
   };
   const openAction = (row: DistributionRow, kind: 'give' | 'revert') => {
     setTarget(row); setAction(kind); setActionYear(year); setNotes(''); setActionError('');
-    setDistMode(''); setQuantity(1);
+    setDistMode('');
     setAssociation(row.associations.find(link => link.bd && link.type)?._id || '');
   };
   const confirmAction = async (event: React.FormEvent) => {
@@ -185,12 +182,11 @@ export const DistributionEntry: React.FC = () => {
     const link = target.associations.find(link => link._id === association);
     if (action === 'give' && (!link?.bd || !link.type)) { setActionError('Choose a valid client association with a Type.'); return; }
     if (action === 'give' && !distMode) { setActionError('Select a Distribution Mode: Courier or In-person.'); return; }
-    if (action === 'give' && (quantity < 1 || quantity > target.allowedQuantity)) { setActionError(`Quantity must be between 1 and ${target.allowedQuantity}.`); return; }
     if (action === 'revert' && notes.trim().length < 5) { setActionError('Enter a reason of at least 5 characters.'); return; }
     actionPending.current = true; setSubmitting(true); setActionError('');
     try {
       const result = action === 'give'
-        ? await api.createDistribution({ clientId: target.clientId, year: actionYear, type: link!.type!, bd: link!.bd!._id, quantity, mode: distMode as DistributionMode, notes: notes.trim() })
+        ? await api.createDistribution({ clientId: target.clientId, year: actionYear, type: link!.type!, bd: link!.bd!._id, mode: distMode as DistributionMode, notes: notes.trim() })
         : await api.revertDistribution(target.currentYearDistribution!._id, notes.trim());
       success(result.message); setTarget(null); await load();
     } catch (error: any) { setActionError(error.message || 'Unable to save distribution.'); }
@@ -311,13 +307,13 @@ export const DistributionEntry: React.FC = () => {
                 <td className="px-4 py-4">{row.associations.length ? row.associations.map(link => <div key={link._id} className="min-h-6 whitespace-nowrap">{link.type || <span className="text-slate-400" title={link.legacyVertical ? `Previous vertical: ${link.legacyVertical}` : undefined}>Unassigned{link.legacyVertical ? ` (was ${link.legacyVertical})` : ''}</span>}</div>) : '\u2014'}</td>
                 <td className="px-4 py-4">{row.associations.length ? row.associations.map(link => <div key={link._id} className="min-h-6 whitespace-nowrap">{link.bd?.name || '\u2014'}</div>) : '\u2014'}</td>
                 <td className="px-4 py-4 text-slate-500">{row.associations.length ? row.associations.map(link => <div key={link._id} className="min-h-6">{link.bd?.email || '\u2014'}</div>) : '\u2014'}</td>
-                <td className="px-4 py-4 whitespace-nowrap font-semibold text-slate-700" data-allowed-quantity>{row.allowedQuantity}</td>
+                <td className="px-4 py-4 whitespace-nowrap font-semibold text-slate-700" data-quantity>{row.currentYearDistribution?.quantity ?? DISTRIBUTION_QUANTITY}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-slate-500">{dateLabel(row.createdAt)}</td>
                 <td className="px-4 py-4 whitespace-nowrap"><span className="font-semibold text-slate-700">{row.lastGiven || '\u2014'}</span>
                   {row.lastGivenDate && <div className="text-xs text-slate-400 mt-1.5">{dateLabel(row.lastGivenDate)}</div>}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap" data-distribution-mode>{(() => { const given = row.currentYearDistribution;
-                  return given?.mode ? <><span className="font-semibold text-slate-700">{MODE_LABEL[given.mode]}</span>{given.quantity ? <div className="text-xs text-slate-400 mt-1.5">Qty {given.quantity}</div> : null}</>
+                  return given?.mode ? <><span className="font-semibold text-slate-700">{MODE_LABEL[given.mode]}</span></>
                     : given ? <span className="text-slate-400" title="Recorded before Courier/In-person tracking existed">Legacy</span> : '\u2014'; })()}</td>
                 <td className="px-4 py-4 whitespace-nowrap" data-distribution-status>{(() => { const given = row.currentYearDistribution;
                   return given?.mode && given.status
@@ -364,9 +360,6 @@ export const DistributionEntry: React.FC = () => {
                 </label>)}
               </div>
             </fieldset>
-            <div className="text-xs font-semibold text-slate-600 text-center">Quantity
-              <div className="mt-1.5 flex justify-center"><QuantityStepper value={quantity} max={target?.allowedQuantity ?? 1} onChange={setQuantity} disabled={submitting} /></div>
-            </div>
             <p className="text-xs text-amber-800 bg-amber-50 p-3 rounded-lg">Confirming blocks further sweet distribution to this client in {actionYear} across all Types and Requestees.</p>
           </> : <p className="text-xs text-slate-600">Reverse only this client's {actionYear} distribution? The original record and notes will be retained with your reason. The client will become eligible again for this year.</p>}
           <label className="block text-xs font-semibold text-slate-600">{action === 'give' ? 'Distribution notes (optional)' : 'Reason for reverting (required)'}

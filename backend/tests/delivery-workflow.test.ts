@@ -1,5 +1,5 @@
 // Run: npx tsx tests/delivery-workflow.test.ts   (in-memory MongoDB only; touches no real data)
-// Covers Type, Allowed Quantity, Distribution Quantity limits (incl. concurrency), Mode, the Courier and
+// Covers Type, the fixed Distribution Quantity of 5 (incl. concurrency), Mode, the Courier and
 // In-person status workflows, delivery-proof rules, filters, persistence and legacy-record handling.
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
@@ -10,7 +10,7 @@ import clientRoutes from '../src/routes/clientRoutes.js';
 import distributionRoutes from '../src/routes/distributionRoutes.js';
 import bdRoutes from '../src/routes/bdRoutes.js';
 import { generateToken } from '../src/config/jwt.js';
-import { MAX_PROOF_BYTES, MAX_ALLOWED_QUANTITY } from '../src/config/distribution.js';
+import { MAX_PROOF_BYTES, DISTRIBUTION_QUANTITY } from '../src/config/distribution.js';
 import { Client, ensureClientIndexes } from '../src/models/Client.js';
 import { ClientAssociation, ensureAssociationIndexes } from '../src/models/ClientAssociation.js';
 import { SweetDistribution, ensureDistributionIndexes } from '../src/models/SweetDistribution.js';
@@ -45,11 +45,11 @@ async function main() {
   };
   let phone = 9000000000;
   const newClient = async (name: string, over: object = {}) => {
-    const r = await call('POST', '/clients', { name, mobile: String(++phone), type: 'Vendor', bd: String(bd1._id), allowedQuantity: 5, ...over });
+    const r = await call('POST', '/clients', { name, mobile: String(++phone), type: 'Vendor', bd: String(bd1._id), ...over });
     assert.equal(r.status, 201, JSON.stringify(r.body)); return r.body.data.clientId as string;
   };
   const give = (clientId: string, over: object = {}) => call('POST', '/distributions',
-    { clientId, year: 2026, type: 'Vendor', bd: String(bd1._id), quantity: 1, mode: 'IN_PERSON', ...over });
+    { clientId, year: 2026, type: 'Vendor', bd: String(bd1._id), mode: 'IN_PERSON', ...over });
   const row = async (clientId: string, query = 'year=2026') => (await call('GET', `/distributions?${query}&limit=100`)).body.data.find((r: any) => r.clientId === clientId);
   let bd1: any, bd2: any;
   try {
@@ -57,68 +57,44 @@ async function main() {
 
     // ---- Type ----
     const types = ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official'];
-    for (const type of types) assert.equal((await call('POST', '/clients', { name: `Type ${type}`, mobile: String(++phone), type, bd: String(bd1._id), allowedQuantity: 1 })).status, 201);
+    for (const type of types) assert.equal((await call('POST', '/clients', { name: `Type ${type}`, mobile: String(++phone), type, bd: String(bd1._id) })).status, 201);
     ok('all five Types (Vendor, Client, Govt. Official, OOH Landlords, Bank Official) are accepted');
     for (const type of ['Roadshow', '', undefined, 'vendor']) assert.equal((await call('POST', '/clients', { name: 'Bad Type', mobile: String(++phone), type, bd: String(bd1._id) })).status, 400);
     ok('legacy verticals, blank, missing and wrong-case Types are rejected');
     assert.equal(await Client.countDocuments({ name: 'Bad Type' }), 0); ok('a rejected Type creates no client');
 
-    // ---- Allowed Quantity on create ----
-    const defaulted = await call('POST', '/clients', { name: 'No Qty', mobile: String(++phone), type: 'Client', bd: String(bd1._id) });
-    assert.equal(defaulted.status, 201); assert.equal(defaulted.body.data.allowedQuantity, 1); ok('Allowed Quantity defaults to 1 when omitted');
-    for (const bad of [0, -1, 1.5, 'abc', MAX_ALLOWED_QUANTITY + 1, null]) {
-      const r = await call('POST', '/clients', { name: 'Bad Qty', mobile: String(++phone), type: 'Client', bd: String(bd1._id), allowedQuantity: bad });
-      if (bad === null) { assert.equal(r.status, 201); continue; } // null is treated as "not supplied"
-      assert.equal(r.status, 400, String(bad));
-    }
-    ok('Allowed Quantity of 0, negative, decimal, text and above-maximum is rejected');
+    // ---- Distribution quantity is fixed at 5 ----
+    assert.equal(DISTRIBUTION_QUANTITY, 5);
+    const plain = await call('POST', '/clients', { name: 'No Qty', mobile: String(++phone), type: 'Client', bd: String(bd1._id) });
+    assert.equal(plain.status, 201); assert.ok(!('allowedQuantity' in plain.body.data)); ok('a client no longer carries an Allowed Quantity');
     const listed = await call('GET', `/clients?type=Vendor&bd=${bd1._id}&limit=100`);
-    assert.ok(listed.body.data.every((c: any) => Number.isInteger(c.allowedQuantity) && c.type === 'Vendor')); ok('client list returns type and allowedQuantity');
-
-    // ---- Distribution quantity limits ----
-    const limited = await newClient('Limited Co', { allowedQuantity: 3 });
-    for (const bad of [0, -2, 1.5, 'x', null, undefined, 4, 999]) assert.equal((await give(limited, { quantity: bad })).status, 400, `quantity ${bad}`);
-    assert.equal(await SweetDistribution.countDocuments({ client: limited }), 0); ok('quantity below 1, non-integer, missing or above Allowed Quantity is rejected and nothing is stored');
-    const atMax = await give(limited, { quantity: 3 });
-    assert.equal(atMax.status, 201); assert.equal(atMax.body.data.quantity, 3); ok('quantity equal to Allowed Quantity is accepted and stored');
-    const minimal = await newClient('Min Qty Co', { allowedQuantity: 4 });
-    assert.equal((await give(minimal, { quantity: '1' })).status, 201); ok('minimum quantity 1 is accepted');
+    assert.ok(listed.body.data.every((c: any) => c.type === 'Vendor' && !('allowedQuantity' in c))); ok('client list returns type and no allowedQuantity');
+    const fixed = await newClient('Fixed Co');
+    const fixedGive = await give(fixed); assert.equal(fixedGive.status, 201, JSON.stringify(fixedGive.body));
+    assert.equal(fixedGive.body.data.quantity, 5); assert.equal((await SweetDistribution.findById(fixedGive.body.data._id))!.quantity, 5); ok('a distribution without a quantity is stored as exactly 5');
+    const ignoring = await newClient('Ignores Qty Co');
+    const tampered = await give(ignoring, { quantity: 99 }); assert.equal(tampered.status, 201); assert.equal(tampered.body.data.quantity, 5);
+    const tampered2 = await newClient('Ignores Qty Co 2'); assert.equal((await give(tampered2, { quantity: 1 })).body.data.quantity, 5);
+    const tampered3 = await newClient('Ignores Qty Co 3'); assert.equal((await give(tampered3, { quantity: -4, allowedQuantity: 50 })).body.data.quantity, 5);
+    ok('a quantity sent by the browser (higher, lower or invalid) is ignored; the server always stores 5');
+    const listedRow = await row(fixed); assert.equal(listedRow.currentYearDistribution.quantity, 5); assert.ok(!('allowedQuantity' in listedRow)); ok('the Entry list reports quantity 5 and no allowed quantity');
 
     // ---- Concurrency ----
-    const raced = await newClient('Race Qty Co', { allowedQuantity: 2 });
-    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => give(raced, { quantity: i % 2 ? 2 : 1, mode: i % 3 ? 'COURIER' : 'IN_PERSON' })));
+    const raced = await newClient('Race Qty Co');
+    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => give(raced, { quantity: i, mode: i % 3 ? 'COURIER' : 'IN_PERSON' })));
     assert.equal(results.filter(r => r.status === 201).length, 1, JSON.stringify(results.map(r => r.status)));
     assert.ok(results.every(r => [201, 409].includes(r.status)));
     const stored = await SweetDistribution.find({ client: raced, isReverted: false }).lean();
-    assert.equal(stored.length, 1); assert.ok(stored[0].quantity! <= 2); ok('12 concurrent distributions for one client record exactly one, within the allowed quantity');
-    const over = await newClient('Race Over Co', { allowedQuantity: 2 });
-    const overResults = await Promise.all(Array.from({ length: 8 }, () => give(over, { quantity: 3 })));
-    assert.ok(overResults.every(r => r.status === 400)); assert.equal(await SweetDistribution.countDocuments({ client: over }), 0); ok('concurrent over-limit requests are all rejected');
-    // Allowed Quantity edit racing a create: the invariant "no in-progress quantity above the allowed quantity" must hold.
-    let violations = 0, bothWon = 0;
-    for (let round = 0; round < 12; round++) {
-      const id = await newClient(`Edit Race ${round}`, { allowedQuantity: 5 });
-      const association = (await ClientAssociation.findOne({ client: id }))!;
-      const [created, edited] = await Promise.all([give(id, { quantity: 5 }), call('PUT', `/clients/${association._id}`, { allowedQuantity: 2 })]);
-      const client = (await Client.findById(id).lean())!;
-      const active = await SweetDistribution.find({ client: id, isReverted: false }).lean();
-      if (active.some(d => d.quantity! > client.allowedQuantity)) violations++;
-      if (created.status === 201 && edited.status === 200) bothWon++;
-    }
-    assert.equal(violations, 0); assert.equal(bothWon, 0); ok('12 racing rounds of "create at 5" vs "lower allowed to 2": never both succeed, never an over-limit record');
+    assert.equal(stored.length, 1); assert.equal(stored[0].quantity, 5); ok('12 concurrent distributions for one client record exactly one, with quantity 5');
 
-    // ---- Editing Allowed Quantity ----
-    const edit = await newClient('Edit Qty Co', { allowedQuantity: 4 });
+    // ---- Client edits cannot change the distribution quantity ----
+    const edit = await newClient('Edit Qty Co');
     const editAssoc = (await ClientAssociation.findOne({ client: edit }))!;
-    assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { allowedQuantity: 6 })).status, 200);
-    assert.equal((await Client.findById(edit))!.allowedQuantity, 6); ok('Allowed Quantity can be raised');
-    for (const bad of [0, 2.5, 'z', '', null]) assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { allowedQuantity: bad })).status, 400);
-    ok('invalid Allowed Quantity edits are rejected');
-    const editGive = await give(edit, { quantity: 6 }); assert.equal(editGive.status, 201);
-    assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { allowedQuantity: 3 })).status, 409);
-    assert.equal((await Client.findById(edit))!.allowedQuantity, 6); ok('Allowed Quantity cannot drop below an in-progress distribution');
+    assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { allowedQuantity: 1 })).status, 200);
+    const editGive = await give(edit); assert.equal(editGive.body.data.quantity, 5);
+    assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { allowedQuantity: 1, name: 'Edit Qty Co Renamed' })).status, 200);
+    assert.equal((await SweetDistribution.findById(editGive.body.data._id))!.quantity, 5); ok('editing a client (even sending an old allowedQuantity) never blocks or changes a distribution');
     assert.equal((await setStatus(editGive.body.data._id, 'DELIVERED')).status, 200);
-    assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { allowedQuantity: 3 })).status, 200); ok('once delivered, the Allowed Quantity may be lowered');
 
     // ---- Mode ----
     const modeClient = await newClient('Mode Co');
@@ -192,7 +168,7 @@ async function main() {
     const reverted = await newClient('Revert Co'); const revertedId = (await give(reverted)).body.data._id as string;
     assert.equal((await call('POST', `/distributions/${revertedId}/revert`, { reason: 'entered by mistake' })).status, 200);
     assert.equal((await setStatus(revertedId, 'DELIVERED')).status, 404); ok('a reverted distribution cannot change status');
-    assert.equal((await give(reverted, { quantity: 2, mode: 'COURIER' })).status, 201); ok('after revert the client can be recorded again with new quantity/mode');
+    assert.equal((await give(reverted, { mode: 'COURIER' })).status, 201); ok('after revert the client can be recorded again with a new mode');
 
     // ---- Filters ----
     const filterBase = await Promise.all([
@@ -242,19 +218,18 @@ async function main() {
     await ensureClientIndexes(); await ensureAssociationIndexes();
     const indexNames = (await ClientAssociation.collection.indexes()).map(index => index.name);
     assert.ok(!indexNames.includes('client_1_vertical_1_bd_1') && indexNames.includes('client_type_bd_unique')); ok('migration swaps the legacy Vertical unique index for the Type index');
-    assert.equal((await Client.findById(legacyClient.insertedId).lean())!.allowedQuantity, 1); ok('existing clients are backfilled with Allowed Quantity 1');
     const legacyRow = await row(String(legacyClient.insertedId));
-    assert.equal(legacyRow.associations[0].type, null); assert.equal(legacyRow.associations[0].legacyVertical, 'Roadshow'); assert.equal(legacyRow.allowedQuantity, 1);
+    assert.equal(legacyRow.associations[0].type, null); assert.equal(legacyRow.associations[0].legacyVertical, 'Roadshow');
     assert.equal(legacyRow.currentYearDistribution.mode, null); assert.equal(legacyRow.currentYearDistribution.quantity, null); assert.equal(legacyRow.currentYearDistribution.notes, 'old');
     ok('legacy records stay readable: old vertical preserved, Type unassigned, no mode/quantity');
     const rawAssoc = await mongoose.connection.collection('clientassociations').findOne({ _id: legacyAssoc.insertedId });
     assert.equal(rawAssoc!.vertical, 'Roadshow'); ok('the stored legacy vertical is untouched');
     assert.equal((await setStatus(String(legacyDist.insertedId), 'DELIVERED')).status, 409); ok('a legacy distribution has no status workflow and cannot be advanced');
-    assert.equal((await call('POST', '/distributions', { clientId: String(legacyClient.insertedId), year: 2027, type: 'Vendor', bd: String(bd1._id), quantity: 1, mode: 'IN_PERSON' })).status, 400); ok('distribution requires an association with a Type; legacy links must be assigned one first');
+    assert.equal((await call('POST', '/distributions', { clientId: String(legacyClient.insertedId), year: 2027, type: 'Vendor', bd: String(bd1._id), mode: 'IN_PERSON' })).status, 400); ok('distribution requires an association with a Type; legacy links must be assigned one first');
     assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Nope' })).status, 400);
-    assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Govt. Official', allowedQuantity: 2 })).status, 200);
+    assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Govt. Official' })).status, 200);
     assert.equal((await ClientAssociation.findById(legacyAssoc.insertedId))!.type, 'Govt. Official');
-    assert.equal((await call('POST', '/distributions', { clientId: String(legacyClient.insertedId), year: 2027, type: 'Govt. Official', bd: String(bd1._id), quantity: 2, mode: 'COURIER' })).status, 201); ok('a legacy link can be assigned a Type, after which it works with the new workflow');
+    assert.equal((await call('POST', '/distributions', { clientId: String(legacyClient.insertedId), year: 2027, type: 'Govt. Official', bd: String(bd1._id), mode: 'COURIER' })).status, 201); ok('a legacy link can be assigned a Type, after which it works with the new workflow');
     assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Client' })).status, 200);
     assert.equal((await ClientAssociation.findById(legacyAssoc.insertedId))!.type, 'Govt. Official'); ok('an assigned Type is not silently changed by edits');
     // Same client may hold several Types under one Requestee, and duplicates are blocked.
@@ -262,19 +237,19 @@ async function main() {
     assert.equal(dup.status, 409); assert.equal(dup.body.code, 'ASSOCIATION_EXISTS'); ok('duplicate Type + Requestee association is still prevented');
 
     // ---- Inline edit / create payloads exactly as the Entry page sends them (Type, never Vertical) ----
-    const inline = await newClient('Inline Co', { type: 'Client', allowedQuantity: 2 });
+    const inline = await newClient('Inline Co', { type: 'Client' });
     const inlineAssoc = (await ClientAssociation.findOne({ client: inline }))!;
-    let edited = await call('PUT', `/clients/${inlineAssoc._id}`, { name: 'Inline Co Renamed', mobile: '7000000001', email: 'inline@adinn.com', allowedQuantity: 4 });
-    assert.equal(edited.status, 200, JSON.stringify(edited.body)); assert.equal(edited.body.data.type, 'Client'); assert.equal(edited.body.data.allowedQuantity, 4);
-    edited = await call('PUT', `/clients/${inlineAssoc._id}`, { name: 'Inline Co Renamed', mobile: '7000000001', email: '', allowedQuantity: 4, type: 'Vendor' });
+    let edited = await call('PUT', `/clients/${inlineAssoc._id}`, { name: 'Inline Co Renamed', mobile: '7000000001', email: 'inline@adinn.com' });
+    assert.equal(edited.status, 200, JSON.stringify(edited.body)); assert.equal(edited.body.data.type, 'Client');
+    edited = await call('PUT', `/clients/${inlineAssoc._id}`, { name: 'Inline Co Renamed', mobile: '7000000001', email: '', type: 'Vendor' });
     assert.equal(edited.status, 200); assert.equal((await ClientAssociation.findById(inlineAssoc._id))!.type, 'Client'); ok('inline edit of a typed record saves (with or without a type field) and keeps its Type');
     assert.equal((await ClientAssociation.findById(inlineAssoc._id))!.bd.toString(), String(bd1._id)); ok('inline edit keeps the Requestee association');
-    const inlineGive = await give(inline, { type: 'Client', quantity: 4, mode: 'COURIER' }); assert.equal(inlineGive.status, 201);
-    edited = await call('PUT', `/clients/${inlineAssoc._id}`, { name: 'Inline Co Renamed', mobile: '7000000001', email: '', allowedQuantity: 2 });
-    assert.equal(edited.status, 409); assert.equal((await Client.findById(inline))!.allowedQuantity, 4);
-    assert.equal((await setStatus(inlineGive.body.data._id, 'DISPATCH')).status, 200); ok('inline edit respects quantity limits and does not disturb an in-progress delivery workflow');
-    const linkNew = await call('POST', '/clients', { name: 'Inline Co Renamed', mobile: '7000000001', email: '', type: 'Bank Official', bd: String(bd2._id), allowedQuantity: 4, confirmExisting: true });
-    assert.equal(linkNew.status, 201, JSON.stringify(linkNew.body)); ok('link-association payload (type + requestee + allowedQuantity) is accepted');
+    const inlineGive = await give(inline, { type: 'Client', mode: 'COURIER' }); assert.equal(inlineGive.status, 201);
+    edited = await call('PUT', `/clients/${inlineAssoc._id}`, { name: 'Inline Co Renamed', mobile: '7000000001', email: '' });
+    assert.equal(edited.status, 200);
+    assert.equal((await setStatus(inlineGive.body.data._id, 'DISPATCH')).status, 200); ok('inline edit does not disturb an in-progress delivery workflow');
+    const linkNew = await call('POST', '/clients', { name: 'Inline Co Renamed', mobile: '7000000001', email: '', type: 'Bank Official', bd: String(bd2._id), confirmExisting: true });
+    assert.equal(linkNew.status, 201, JSON.stringify(linkNew.body)); ok('link-association payload (type + requestee) is accepted');
     const noType = await call('POST', '/clients', { name: 'No Type Co', mobile: String(++phone), vertical: 'Roadshow', bd: String(bd1._id) });
     assert.equal(noType.status, 400); assert.match(noType.body.message, /Valid Type is required/); assert.ok(!/vertical/i.test(noType.body.message)); ok('a legacy "vertical" payload is rejected with a Type message');
     const fs = await import('node:fs'); const path = await import('node:path');
@@ -287,28 +262,28 @@ async function main() {
     const dupName = await BD.create({ name: 'Shared Name', email: 'shared1@adinn.com' }); await BD.create({ name: 'Shared Name', email: 'shared2@adinn.com' });
     const before = { clients: await Client.countDocuments(), dists: await SweetDistribution.countDocuments() };
     const bulk = await call('POST', '/clients/bulk-import', { records: [
-      { 'Client/Vendor Name': 'Bulk A', 'Mobile Number': '6000000001', 'Email ID': 'a@x.com', Type: 'Vendor', 'Requestee Email': 'ONE@adinn.com', 'Allowed Quantity': 3 },
+      { 'Client/Vendor Name': 'Bulk A', 'Mobile Number': '6000000001', 'Email ID': 'a@x.com', Type: 'Vendor', 'Requestee Email': 'ONE@adinn.com' },
       { 'Client/Vendor Name': 'Bulk B', 'Mobile Number': '6000000002', Type: 'Govt. Official', 'Requestee Name': 'requestee   two' },
       { 'Client/Vendor Name': 'Bulk C', 'Mobile Number': '6000000003', Type: 'Roadshow', 'Requestee Email': 'one@adinn.com' },
       { 'Client/Vendor Name': 'Bulk D', 'Mobile Number': '6000000004', Type: 'Client', 'Requestee Email': 'nobody@adinn.com' },
       { 'Client/Vendor Name': 'Bulk E', 'Mobile Number': '6000000005', Type: 'Client', 'Requestee Name': 'Shared Name' },
-      { 'Client/Vendor Name': 'Bulk F', 'Mobile Number': '6000000006', Type: 'Client', 'Requestee Email': 'one@adinn.com', 'Allowed Quantity': 0 },
+      { 'Client/Vendor Name': 'Bulk F', 'Mobile Number': '6000000006', Type: 'Client', 'Requestee Email': 'one@adinn.com', 'Allowed Quantity': 0 }, // an old Allowed Quantity column is ignored, not an error
       { 'Client/Vendor Name': 'Bulk G', 'Mobile Number': '', Type: 'Client', 'Requestee Email': 'one@adinn.com' },
       { 'Client/Vendor Name': 'Bulk A', 'Mobile Number': '6000000001', Type: 'Vendor', 'Requestee Email': 'one@adinn.com' },
-      { 'Client/Vendor Name': 'Bulk H', 'Mobile Number': '6000000008', Type: 'Client', 'Requestee Email': 'shared2@adinn.com', 'Allowed Quantity': '2' },
+      { 'Client/Vendor Name': 'Bulk H', 'Mobile Number': '6000000008', Type: 'Client', 'Requestee Email': 'shared2@adinn.com' },
       { 'Client/Vendor Name': 'Bulk I', 'Mobile Number': '6000000009', Type: 'Client' },
     ] });
     assert.equal(bulk.status, 200, JSON.stringify(bulk.body));
-    assert.deepEqual([bulk.body.summary.successful, bulk.body.summary.duplicates, bulk.body.summary.invalid], [3, 1, 6], JSON.stringify(bulk.body));
+    assert.deepEqual([bulk.body.summary.successful, bulk.body.summary.duplicates, bulk.body.summary.invalid], [4, 1, 5], JSON.stringify(bulk.body));
     const bulkA = (await Client.findOne({ name: 'Bulk A' }).lean())!; const bulkB = (await Client.findOne({ name: 'Bulk B' }).lean())!;
-    assert.equal(bulkA.allowedQuantity, 3); assert.equal(bulkB.allowedQuantity, 1);
+    assert.ok(!('allowedQuantity' in bulkA) && !('allowedQuantity' in bulkB));
     assert.equal((await ClientAssociation.findOne({ client: bulkA._id }))!.type, 'Vendor'); assert.equal(String((await ClientAssociation.findOne({ client: bulkB._id }))!.bd), String(bd2._id));
-    assert.equal((await Client.findOne({ name: 'Bulk H' }))!.allowedQuantity, 2); assert.equal(await Client.countDocuments({ name: /^Bulk [CDEFGI]$/ }), 0);
+    assert.ok(await Client.findOne({ name: 'Bulk H' }) && await Client.findOne({ name: 'Bulk F' })); assert.equal(await Client.countDocuments({ name: /^Bulk [CDEGI]$/ }), 0);
     assert.ok(bulk.body.errors.some((m: string) => /Row 5.*ambiguous/.test(m)) && bulk.body.errors.some((m: string) => /Row 3.*Type must be/.test(m)) && bulk.body.errors.some((m: string) => /Row 9|Row 10.*Requestee is required/.test(m)));
-    assert.equal(await Client.countDocuments(), before.clients + 3); assert.equal(await SweetDistribution.countDocuments(), before.dists); ok('bulk import reads Type, Requestee (email or name) and Allowed Quantity per row, rejects bad rows with reasons, and creates no distributions');
-    const again = await call('POST', '/clients/bulk-import', { records: [{ name: 'Bulk A', mobile: '6000000001', type: 'Vendor', requestee: 'one@adinn.com', allowedQuantity: 9 }, { name: 'Bulk A', mobile: '6000000001', type: 'Bank Official', requestee: 'one@adinn.com', allowedQuantity: 9 }] });
+    assert.equal(await Client.countDocuments(), before.clients + 4); assert.equal(await SweetDistribution.countDocuments(), before.dists); ok('bulk import reads Type and Requestee (email or name) per row, ignores an old Allowed Quantity column, rejects bad rows with reasons, and creates no distributions');
+    const again = await call('POST', '/clients/bulk-import', { records: [{ name: 'Bulk A', mobile: '6000000001', type: 'Vendor', requestee: 'one@adinn.com' }, { name: 'Bulk A', mobile: '6000000001', type: 'Bank Official', requestee: 'one@adinn.com' }] });
     assert.deepEqual([again.body.summary.successful, again.body.summary.duplicates], [1, 1]);
-    assert.equal((await Client.findById(bulkA._id))!.allowedQuantity, 3); assert.equal(await ClientAssociation.countDocuments({ client: bulkA._id }), 2); ok('re-importing is idempotent; an existing client gains a new Type association and keeps its Allowed Quantity');
+    assert.equal(await ClientAssociation.countDocuments({ client: bulkA._id }), 2); ok('re-importing is idempotent; an existing client gains a new Type association');
     const defaults = await call('POST', '/clients/bulk-import', { type: 'Bank Official', bd: String(bd1._id), records: [{ name: 'Bulk Default', mobile: '6000000010' }] });
     assert.equal(defaults.body.summary.successful, 1); assert.equal((await ClientAssociation.findOne({ client: (await Client.findOne({ name: 'Bulk Default' }))!._id }))!.type, 'Bank Official'); ok('top-level type/bd still act as defaults for blank cells');
     assert.equal((await call('POST', '/clients/bulk-import', { records: [] })).status, 400); assert.equal((await call('POST', '/clients/bulk-import', { type: 'Nope', records: [{}] })).status, 400); ok('empty files and an invalid default Type are rejected');
@@ -324,9 +299,9 @@ async function main() {
     const phoneAssoc = (await ClientAssociation.findOne({ client: (await Client.findOne({ name: 'Phone Good' }))!._id }))!;
     for (const bad of ['98123456', '+919812345671', '98123 45671', 'abcdefghij']) assert.equal((await call('PUT', `/clients/${phoneAssoc._id}`, { mobile: bad })).status, 400, bad);
     assert.equal((await call('PUT', `/clients/${phoneAssoc._id}`, { mobile: '9812345671' })).status, 200); assert.equal((await Client.findOne({ name: 'Phone Good' }))!.mobile, '9812345671'); ok('editing a phone number enforces the same rule');
-    const oldFormat = await mongoose.connection.collection('clients').insertOne({ name: 'Old Format Co', normalizedName: 'old format co', mobile: '+91 98765-00077', normalizedMobile: '9876500077', email: '', allowedQuantity: 1, createdAt: new Date(), updatedAt: new Date() });
+    const oldFormat = await mongoose.connection.collection('clients').insertOne({ name: 'Old Format Co', normalizedName: 'old format co', mobile: '+91 98765-00077', normalizedMobile: '9876500077', email: '', createdAt: new Date(), updatedAt: new Date() });
     const oldAssoc = await mongoose.connection.collection('clientassociations').insertOne({ client: oldFormat.insertedId, type: 'Client', bd: bd1._id, createdAt: new Date(), updatedAt: new Date() });
-    assert.equal((await call('PUT', `/clients/${oldAssoc.insertedId}`, { name: 'Old Format Co Renamed', mobile: '+91 98765-00077', allowedQuantity: 2 })).status, 200);
+    assert.equal((await call('PUT', `/clients/${oldAssoc.insertedId}`, { name: 'Old Format Co Renamed', mobile: '+91 98765-00077' })).status, 200);
     assert.equal((await Client.findById(oldFormat.insertedId))!.mobile, '+91 98765-00077'); ok('a record saved with an older phone format can still be edited while its number is unchanged');
     assert.equal((await call('PUT', `/clients/${oldAssoc.insertedId}`, { mobile: '+91 98765-00078' })).status, 400); assert.equal((await call('PUT', `/clients/${oldAssoc.insertedId}`, { mobile: '9876500078' })).status, 200); ok('changing an older-format number requires a valid 10-digit one');
     const phoneBulk = await call('POST', '/clients/bulk-import', { type: 'Client', bd: String(bd1._id), records: [{ name: 'PB Ok', mobile: '9811111111' }, { name: 'PB Short', mobile: '981111111' }, { name: 'PB Plus', mobile: '+919811111112' }, { name: 'PB Space', mobile: '98111 11113' }] });
@@ -348,10 +323,10 @@ async function main() {
     const same = await Promise.all(Array.from({ length: 8 }, () => call('POST', '/bds', { name: 'Race Requestee', email: 'race.requestee@adinn.co.in' })));
     assert.equal(same.filter(r => r.status === 201).length, 1); assert.ok(same.every(r => [201, 409].includes(r.status))); assert.equal(await BD.countDocuments({ email: 'race.requestee@adinn.co.in' }), 1); ok('8 concurrent identical Requestee saves create exactly one');
     const before2 = { assoc: await ClientAssociation.countDocuments(), dists: await SweetDistribution.countDocuments(), clients: await Client.countDocuments() };
-    const meeraClient = await call('POST', '/clients', { name: 'Meera Co', mobile: String(++phone), type: 'Client', bd: created.body.data._id, allowedQuantity: 2 });
+    const meeraClient = await call('POST', '/clients', { name: 'Meera Co', mobile: String(++phone), type: 'Client', bd: created.body.data._id });
     assert.equal(meeraClient.status, 201); assert.equal(String(meeraClient.body.data.bd._id), created.body.data._id);
     assert.equal(await ClientAssociation.countDocuments(), before2.assoc + 1); assert.equal(await SweetDistribution.countDocuments(), before2.dists); assert.equal(await Client.countDocuments(), before2.clients + 1);
-    assert.equal((await give(meeraClient.body.data.clientId, { bd: created.body.data._id, type: 'Client', quantity: 2, mode: 'IN_PERSON' })).status, 201); ok('a newly added Requestee can be linked to a client and used for a distribution; existing associations are untouched');
+    assert.equal((await give(meeraClient.body.data.clientId, { bd: created.body.data._id, type: 'Client', mode: 'IN_PERSON' })).status, 201); ok('a newly added Requestee can be linked to a client and used for a distribution; existing associations are untouched');
     assert.equal((await fetch(`${base}/bds`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'No Auth', email: 'noauth@adinn.co.in' }) })).status, 401); ok('adding a Requestee requires authentication');
 
     // ---- Existing rules untouched ----

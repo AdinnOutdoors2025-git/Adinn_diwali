@@ -98,11 +98,11 @@ export const ExcelImportModal: React.FC<Props> = ({ isOpen, onClose, bds, onImpo
             </div>
             <div className="max-h-72 overflow-auto border border-slate-200 rounded-lg">
               <table aria-label="Import preview" className="w-full min-w-[640px] text-left text-xs">
-                <thead className="sticky top-0 bg-slate-50 text-slate-600"><tr>{['#', 'Name', 'Phone', 'Type', 'Requestee', 'Qty', 'Status'].map(label => <th key={label} className="px-3 py-2 font-semibold whitespace-nowrap">{label}</th>)}</tr></thead>
+                <thead className="sticky top-0 bg-slate-50 text-slate-600"><tr>{['#', 'Name', 'Phone', 'Type', 'Requestee', 'Status'].map(label => <th key={label} className="px-3 py-2 font-semibold whitespace-nowrap">{label}</th>)}</tr></thead>
                 <tbody className="divide-y divide-slate-100">
                   {rows.slice(0, 200).map(row => <tr key={row.index} className={row.status === 'valid' ? '' : row.status === 'duplicate' ? 'bg-amber-50/50' : 'bg-rose-50/50'}>
                     <td className="px-3 py-2 text-slate-400">{row.index}</td><td className="px-3 py-2 font-medium text-slate-800">{row.name || '—'}</td><td className="px-3 py-2">{row.mobile || '—'}</td>
-                    <td className="px-3 py-2">{row.type || '—'}</td><td className="px-3 py-2">{row.requestee || '—'}</td><td className="px-3 py-2">{row.allowedQuantity}</td>
+                    <td className="px-3 py-2">{row.type || '—'}</td><td className="px-3 py-2">{row.requestee || '—'}</td>
                     <td className={`px-3 py-2 font-semibold whitespace-nowrap ${row.status === 'valid' ? 'text-emerald-700' : row.status === 'duplicate' ? 'text-amber-700' : 'text-rose-700'}`}>
                       {row.status === 'invalid' && <XCircle className="inline w-3.5 h-3.5 mr-1" aria-hidden="true" />}{row.reason}</td>
                   </tr>)}

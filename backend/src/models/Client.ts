@@ -1,5 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { MAX_ALLOWED_QUANTITY } from '../config/distribution.js';
 
 export interface IClient extends Document {
   name: string;
@@ -7,7 +6,6 @@ export interface IClient extends Document {
   mobile: string;
   normalizedMobile: string;
   email?: string;
-  allowedQuantity: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,13 +41,6 @@ const ClientSchema = new Schema<IClient>(
       lowercase: true,
       default: '',
     },
-    allowedQuantity: {
-      type: Number,
-      default: 1,
-      min: [1, 'Allowed Quantity must be at least 1'],
-      max: [MAX_ALLOWED_QUANTITY, `Allowed Quantity cannot exceed ${MAX_ALLOWED_QUANTITY}`],
-      validate: { validator: Number.isInteger, message: 'Allowed Quantity must be a whole number' },
-    },
   },
   {
     timestamps: true,
@@ -68,7 +59,5 @@ export const ensureClientIndexes = async (): Promise<void> => {
   await Client.createCollection();
   await Client.collection.createIndex({ normalizedMobile: 1 }, { unique: true, name: 'normalized_mobile_unique' });
   await Client.collection.createIndex({ normalizedName: 1 }, { unique: true, name: 'normalized_name_unique' });
-  // Existing clients predate Allowed Quantity: give them the default of 1 (idempotent, no other change).
-  await Client.updateMany({ allowedQuantity: { $exists: false } }, { $set: { allowedQuantity: 1 } }, { timestamps: false });
 };
 

@@ -27,7 +27,6 @@ export interface ClientRecord {
   name: string;
   mobile: string;
   email?: string;
-  allowedQuantity: number;
   type: ClientType | null;
   bd: BD | string;
   createdAt?: string;
@@ -41,7 +40,6 @@ export interface DistributionRow {
   clientName: string;
   clientMobile: string;
   clientEmail: string;
-  allowedQuantity: number;
   type: ClientType | null;
   bd: BD | null;
   associations: { _id: string; type: ClientType | null; legacyVertical: string | null; bd: BD | null }[];

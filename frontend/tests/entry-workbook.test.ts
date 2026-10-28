@@ -13,13 +13,13 @@ const base = { associationId: 'a', clientEmail: '', createdAt: '2026-10-01T05:00
 const given = (over: object) => ({ _id: 'd', distributionYear: 2026, type: 'Vendor', legacyVertical: null, quantity: 2, mode: 'COURIER', status: 'SHIPPING', statusHistory: [], hasProof: false,
   deliveredAt: null, bdId: 'bd1', bdName: bd.name, bdEmail: bd.email, distributedAt: '2026-10-02T05:00:00.000Z', notes: '', ...over });
 const records = [
-  { ...base, _id: 'c1', clientId: 'c1', clientName: 'Courier Co', clientMobile: '9000000001', allowedQuantity: 5, isEligible: false, lastGiven: 2026,
+  { ...base, _id: 'c1', clientId: 'c1', clientName: 'Courier Co', clientMobile: '9000000001', isEligible: false, lastGiven: 2026,
     associations: [{ _id: 'a1', type: 'Vendor', legacyVertical: null, bd }], currentYearDistribution: given({ quantity: 2, mode: 'COURIER', status: 'SHIPPING' }) },
-  { ...base, _id: 'c2', clientId: 'c2', clientName: 'Walk-in Co', clientMobile: '9000000002', allowedQuantity: 3, isEligible: false, lastGiven: 2026,
+  { ...base, _id: 'c2', clientId: 'c2', clientName: 'Walk-in Co', clientMobile: '9000000002', isEligible: false, lastGiven: 2026,
     associations: [{ _id: 'a2', type: 'Govt. Official', legacyVertical: null, bd }], currentYearDistribution: given({ type: 'Govt. Official', quantity: 3, mode: 'IN_PERSON', status: 'DELIVERED', hasProof: true }) },
-  { ...base, _id: 'c3', clientId: 'c3', clientName: 'Pending Co', clientMobile: '9000000003', allowedQuantity: 1, isEligible: true,
+  { ...base, _id: 'c3', clientId: 'c3', clientName: 'Pending Co', clientMobile: '9000000003', isEligible: true,
     associations: [{ _id: 'a3', type: 'Bank Official', legacyVertical: null, bd }], currentYearDistribution: null },
-  { ...base, _id: 'c4', clientId: 'c4', clientName: 'Legacy Co', clientMobile: '9000000004', allowedQuantity: 1, isEligible: false, lastGiven: 2026,
+  { ...base, _id: 'c4', clientId: 'c4', clientName: 'Legacy Co', clientMobile: '9000000004', isEligible: false, lastGiven: 2026,
     associations: [{ _id: 'a4', type: null, legacyVertical: 'Roadshow', bd }], currentYearDistribution: given({ type: null, legacyVertical: 'Roadshow', quantity: null, mode: null, status: null }) },
 ] as unknown as DistributionRow[];
 const filters: EntryExportFilters = { year: 2026, type: 'ALL', bd: 'ALL', status: 'ALL', mode: 'ALL', deliveryStatus: 'ALL', search: '' };
@@ -35,16 +35,16 @@ async function main() {
   const { workbook, details, summary } = await read(records);
   assert.deepEqual(workbook.SheetNames, ['Summary', 'Distribution Details', 'Type Analytics', 'Requestee Analytics']); ok('sheets are renamed to Type / Requestee analytics');
   const headings = Object.keys(details[0]);
-  for (const required of ['Type', 'Requestee Name', 'Requestee Email', 'Allowed Quantity', 'Distribution Quantity', 'Mode', 'Status', 'Distribution Status', 'Distribution Year', 'Last Given Year'])
+  for (const required of ['Type', 'Requestee Name', 'Requestee Email', 'Distribution Quantity', 'Mode', 'Status', 'Distribution Status', 'Distribution Year', 'Last Given Year'])
     assert.ok(headings.includes(required), `missing column ${required}`);
-  assert.ok(!headings.some(h => /vertical|\bBD\b/i.test(h))); ok('export has Type, Requestee Name, Allowed/Distribution Quantity, Mode and Status columns and no Vertical/BD headings');
+  assert.ok(!headings.includes('Allowed Quantity')); assert.ok(!headings.some(h => /vertical|\bBD\b/i.test(h))); ok('export has Type, Requestee Name, Distribution Quantity, Mode and Status columns and no Vertical/BD headings');
   const byName = Object.fromEntries(details.map(row => [row['Client/Vendor Name'] as string, row]));
   assert.equal(byName['Courier Co'].Type, 'Vendor'); assert.equal(byName['Courier Co']['Requestee Name'], 'Asha Requestee');
-  assert.equal(byName['Courier Co']['Allowed Quantity'], 5); assert.equal(byName['Courier Co']['Distribution Quantity'], 2);
+  assert.equal(byName['Courier Co']['Distribution Quantity'], 2);
   assert.equal(byName['Courier Co'].Mode, 'Courier'); assert.equal(byName['Courier Co'].Status, 'Shipping'); assert.equal(byName['Courier Co']['Distribution Status'], 'Given'); ok('courier row values');
   assert.equal(byName['Walk-in Co'].Mode, 'In-person'); assert.equal(byName['Walk-in Co'].Status, 'Delivered'); assert.equal(byName['Walk-in Co']['Distribution Quantity'], 3); ok('in-person row values');
   assert.equal(byName['Pending Co'].Mode, ''); assert.equal(byName['Pending Co'].Status, ''); assert.equal(byName['Pending Co']['Distribution Quantity'], ''); assert.equal(byName['Pending Co']['Distribution Status'], 'Not Given');
-  assert.equal(byName['Pending Co']['Allowed Quantity'], 1); ok('undistributed row keeps Allowed Quantity and blank mode/status/quantity');
+  ok('undistributed row has blank mode/status/quantity');
   assert.equal(byName['Legacy Co'].Type, 'Unassigned'); assert.equal(byName['Legacy Co'].Mode, ''); assert.equal(byName['Legacy Co']['Distribution Status'], 'Given'); ok('legacy row exports as Unassigned with blank mode/status');
   assert.equal(details.length, 4); ok('one row per matching client');
 

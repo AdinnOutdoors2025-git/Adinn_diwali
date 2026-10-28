@@ -9,7 +9,7 @@ import { BD } from '../models/BD.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { FIRST_DIWALI_YEAR, isRecordableYear } from '../config/diwaliYear.js';
 import {
-  DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, parseWholeNumber,
+  DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, DISTRIBUTION_QUANTITY,
 } from '../config/distribution.js';
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -67,7 +67,6 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
       return {
         _id: client._id, clientId: client._id, associationId: links[0]?._id || null,
         clientName: client.name, clientMobile: client.mobile, clientEmail: client.email || '',
-        allowedQuantity: client.allowedQuantity ?? 1,
         associations: links.map((row: any) => ({ _id: row._id, type: row.type || null, legacyVertical: row.vertical || null, bd: row.bd })),
         type: links[0]?.type || null, bd: links[0]?.bd || null,
         createdAt: client.createdAt,
@@ -92,7 +91,7 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
 
 export const createDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { clientId, year, type, bd, notes, quantity, mode } = req.body;
+    const { clientId, year, type, bd, notes, mode } = req.body;
 
     if (!clientId || !mongoose.Types.ObjectId.isValid(clientId)) {
       res.status(400).json({ success: false, message: 'Valid Client ID is required' });
@@ -120,21 +119,9 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    const requestedQuantity = parseWholeNumber(quantity);
-    if (requestedQuantity === null || requestedQuantity < 1) {
-      res.status(400).json({ success: false, message: 'Quantity must be a whole number of at least 1' });
-      return;
-    }
-
     const client = await Client.findById(clientId);
     if (!client) {
       res.status(404).json({ success: false, message: 'Client not found' });
-      return;
-    }
-
-    const allowedQuantity = client.allowedQuantity ?? 1;
-    if (requestedQuantity > allowedQuantity) {
-      res.status(400).json({ success: false, message: `Quantity cannot exceed the Allowed Quantity of ${allowedQuantity} for "${client.name}".` });
       return;
     }
 
@@ -180,7 +167,7 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
       distributionYear,
       type,
       bd,
-      quantity: requestedQuantity,
+      quantity: DISTRIBUTION_QUANTITY,
       mode,
       status: 'INITIATE',
       statusHistory: [{ status: 'INITIATE', at: now, by: userId }],
@@ -188,15 +175,6 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
       notes: notes ? String(notes).trim() : '',
       distributedAt: now,
     });
-
-    // The Allowed Quantity may have been lowered after it was read above. Re-check against the stored value
-    // (the edit path performs the mirror check), so concurrent edits and creates cannot both succeed.
-    const latest = await Client.findById(clientId).select('allowedQuantity').lean();
-    if (requestedQuantity > (latest?.allowedQuantity ?? 1)) {
-      await SweetDistribution.deleteOne({ _id: distribution._id });
-      res.status(409).json({ success: false, message: `The Allowed Quantity for "${client.name}" changed to ${latest?.allowedQuantity ?? 1} while saving. Quantity was not recorded; please try again.` });
-      return;
-    }
 
     res.status(201).json({
       success: true,

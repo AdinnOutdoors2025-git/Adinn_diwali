@@ -30,7 +30,6 @@ export const findOrCreateClient = async (data: {
   name: string;
   mobile: string;
   email?: string;
-  allowedQuantity?: number;
 }): Promise<{ client: IClient; isNew: boolean }> => {
   const trimmedName = data.name.trim();
   const trimmedMobile = data.mobile.trim();
@@ -66,7 +65,6 @@ export const findOrCreateClient = async (data: {
     mobile: trimmedMobile,
     normalizedMobile: normMobile,
     email: trimmedEmail,
-    ...(data.allowedQuantity ? { allowedQuantity: data.allowedQuantity } : {}),
     });
 
     return { client: newClient, isNew: true };

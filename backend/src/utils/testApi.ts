@@ -61,7 +61,7 @@ async function runTests() {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      type: 'Client', allowedQuantity: 1,
+      type: 'Client', 
       bd: activeBD._id,
       name: `Unique Corp ${Date.now()}`,
       mobile: `98${Math.floor(10000000 + Math.random() * 90000000)}`,
@@ -83,7 +83,7 @@ async function runTests() {
     body: JSON.stringify({
       clientId,
       year: 2026,
-      type: 'Client', quantity: 1, mode: 'IN_PERSON',
+      type: 'Client', mode: 'IN_PERSON',
       bd: activeBD._id,
       notes: 'Delivered Royal Kaju Katli Box',
     }),
@@ -102,7 +102,7 @@ async function runTests() {
     body: JSON.stringify({
       clientId,
       year: 2026,
-      type: 'Vendor', quantity: 1, mode: 'IN_PERSON',
+      type: 'Vendor', mode: 'IN_PERSON',
       bd: activeBD._id,
     }),
   });
@@ -120,7 +120,7 @@ async function runTests() {
     body: JSON.stringify({
       clientId,
       year: 2027,
-      type: 'Client', quantity: 1, mode: 'IN_PERSON',
+      type: 'Client', mode: 'IN_PERSON',
       bd: activeBD._id,
     }),
   });

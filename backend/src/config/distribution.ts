@@ -21,13 +21,7 @@ export const nextStatus = (mode: DistributionMode, current: DeliveryStatus): Del
   return index >= 0 && index < flow.length - 1 ? flow[index + 1] : null;
 };
 
-// Upper bound accepted when configuring a client's Allowed Quantity.
-export const MAX_ALLOWED_QUANTITY = Number(process.env.MAX_ALLOWED_QUANTITY) || 1000;
+// Every distribution is exactly this many sweets. It is set here, never taken from the request.
+export const DISTRIBUTION_QUANTITY = 5;
 export const MAX_PROOF_BYTES = (Number(process.env.MAX_PROOF_MB) || 5) * 1024 * 1024;
 
-// Accepts integers or integer strings; anything else (decimals, blanks, NaN) is rejected.
-export const parseWholeNumber = (value: unknown): number | null => {
-  if (typeof value === 'number') return Number.isInteger(value) ? value : null;
-  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value.trim());
-  return null;
-};

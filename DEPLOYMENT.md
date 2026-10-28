@@ -11,7 +11,7 @@ Backend: Render. Frontend: Vercel (`frontend/vercel.json` rewrites `/api/*` to t
 | `JWT_SECRET` | At least 32 random characters. The server refuses to start in production if it is missing, short, or a known/published value |
 | `USE_MEMORY_DB_IF_LOCAL_FAILS` | `false` |
 | `CORS_ORIGINS` | Optional, comma-separated extra origins |
-| `MAX_PROOF_MB`, `MAX_ALLOWED_QUANTITY` | Optional (defaults 5 and 1000) |
+| `MAX_PROOF_MB` | Optional (default 5) |
 
 Build command `npm install && npm run build`, start command `npm start`.
 
@@ -42,7 +42,7 @@ The new startup migrations modify indexes and add one field, so take a backup fi
 
 ## 4. What the migration does at startup (idempotent)
 
-1. `clients`: records without `allowedQuantity` get `1`. Nothing else changes.
+1. `clients`: no longer touched. Distribution quantity is fixed at 5 in code (`DISTRIBUTION_QUANTITY`); any old `allowedQuantity` field already stored on clients is simply ignored and left in place.
 2. `clientassociations`: the old unique index on client + vertical + requestee is dropped and a unique index on client + type + requestee is created. It applies only to records that have a Type, so existing records are unaffected.
 3. Existing associations keep their `vertical` and show as "Unassigned" until a Type is assigned. Existing distributions have no mode/status and show as "Legacy".
 4. No records are deleted or rewritten, and `SweetDistribution` indexes are unchanged.
