@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { BD, DistributionRow, TYPE_OPTIONS } from '../types';
-import { MODE_LABEL, STATUS_LABEL } from '../config/distribution';
+import { DISTRIBUTION_QUANTITY, MODE_LABEL, STATUS_LABEL } from '../config/distribution';
 
 export interface EntryExportFilters {
   year: number; type: string; bd: string; status: 'ALL' | 'GIVEN' | 'NOT_GIVEN'; mode: string; deliveryStatus: string; search: string;
@@ -71,6 +71,9 @@ function chart(title: string, categories: string[], formula: string, series: Ser
 export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filters: EntryExportFilters): Blob {
   const rows = [...new Map(records.map(row => [row.clientId, row])).values()];
   const given = rows.filter(row => !row.isEligible).length, pending = rows.length - given;
+  // Quantity: every pending client is owed the fixed quantity; given clients count what was recorded (older records without one count the fixed quantity).
+  const givenQty = rows.filter(row => !row.isEligible).reduce((sum, row) => sum + (row.currentYearDistribution?.quantity ?? DISTRIBUTION_QUANTITY), 0);
+  const pendingQty = pending * DISTRIBUTION_QUANTITY, totalQty = givenQty + pendingQty;
   const selectedBD = bds.find(row => row._id === filters.bd);
   if (filters.bd !== 'ALL' && !selectedBD) throw new Error('Selected BD is no longer in the master list');
   const types = TYPE_OPTIONS.map(type => {
@@ -101,9 +104,9 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
   put(6, 4, 'Scope', 2); put(6, 5, `${rows.length} distinct matching clients`);
   const kpis = [
     { start: 0, end: 1, title: 'Registered clients', value: rows.length, style: 18 },
-    { start: 2, end: 3, title: 'Completed', value: given, style: 19 },
-    { start: 4, end: 5, title: 'Given', value: given, style: 19 },
-    { start: 6, end: 7, title: 'Pending', value: pending, style: 20 },
+    { start: 2, end: 3, title: 'Total Quantity', value: totalQty, style: 18 },
+    { start: 4, end: 5, title: 'Given Quantity', value: givenQty, style: 19 },
+    { start: 6, end: 7, title: 'Pending Quantity', value: pendingQty, style: 20 },
     { start: 8, end: 11, title: 'Completion', value: percentage(given, rows.length), style: 21 },
   ];
   for (const kpi of kpis) { put(8, kpi.start + 1, kpi.title, 17); put(9, kpi.start + 1, kpi.value, kpi.style); merges.push(`${col(kpi.start)}8:${col(kpi.end)}8`, `${col(kpi.start)}9:${col(kpi.end)}10`); }
@@ -112,7 +115,7 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
   put(14, 1, 'Type/Requestee groups may overlap. Group Given and completion rates use global client status; completed distributions are credited once to the recorded Type/Requestee.', 22);
   put(15, 1, 'Times are shown in IST. Distribution Marked is when sweets were recorded, not the client creation date.', 22);
   const headers = (row: number, values: string[]) => values.forEach((value, index) => put(row, index + 1, value, 3));
-  headers(17, ['Distribution Status', 'Clients']); put(18, 1, 'Given', 6); put(18, 2, given, 10); put(19, 1, 'Not Given', 8); put(19, 2, pending, 10);
+  headers(17, ['Distribution Status', 'Clients', 'Quantity']); put(18, 1, 'Given', 6); put(18, 2, given, 10); put(18, 3, givenQty, 10); put(19, 1, 'Not Given', 8); put(19, 2, pending, 10); put(19, 3, pendingQty, 10);
   headers(21, ['Type', 'Eligible clients', 'Given', 'Not Given', 'Completion', 'Completed here']);
   types.forEach((row, index) => [row.name, row.registered, row.given, row.pending, row.percent, row.credited].forEach((value, column) => put(index + 22, column + 1, value, column === 4 ? 12 : column ? 10 : 4)));
   headers(33, ['Requestee Name', 'Requestee Email', 'Associated clients', 'Given', 'Not Given', 'Completed by Requestee']);

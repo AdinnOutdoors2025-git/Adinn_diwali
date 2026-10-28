@@ -51,6 +51,12 @@ async function main() {
   const labelled = (label: string) => { const row = summary.find(cells => cells[0] === label) as unknown[]; return row; };
   assert.equal(labelled('Type')[1], 'All Types'); assert.equal((summary.find(c => c[3] === 'Requestee Name') as unknown[])[4], 'All Requestees');
   ok('summary describes the active Type / Requestee filters');
+  const kpiRow = summary.findIndex(cells => cells[2] === 'Total Quantity'); const kpiTitles = summary[kpiRow] as unknown[], kpiValues = summary[kpiRow + 1] as unknown[];
+  assert.deepEqual([kpiTitles[2], kpiTitles[4], kpiTitles[6]], ['Total Quantity', 'Given Quantity', 'Pending Quantity']);
+  assert.deepEqual([kpiValues[2], kpiValues[4], kpiValues[6]], [15, 10, 5]); // given 2 + 3 + 5 (legacy counts the fixed 5), pending 1 client x 5
+  const statusRows = summary.filter(cells => cells[0] === 'Given' || cells[0] === 'Not Given') as unknown[][];
+  assert.deepEqual(statusRows.slice(0, 2).map(cells => [cells[0], cells[1], cells[2]]), [['Given', 3, 10], ['Not Given', 1, 5]]);
+  ok('summary shows Total / Given / Pending quantity (total = given + pending) and quantity per status');
   const filtered = await read([records[0]], { type: 'Vendor', mode: 'COURIER', deliveryStatus: 'SHIPPING', search: 'Courier' });
   const modeCell = filtered.summary.find(cells => cells[3] === 'Mode / Stage') as unknown[];
   assert.equal(modeCell[4], 'Courier - Shipping'); assert.equal((filtered.summary.find(cells => cells[0] === 'Type') as unknown[])[1], 'Vendor');
