@@ -56,12 +56,12 @@ async function runTests() {
   console.log(`✓ Active BD: ${activeBD.name} (${activeBD._id})`);
 
   // 4. Create Client
-  console.log('4. Creating Client under Vertical "Roadshow"...');
+  console.log('4. Creating Client under Type "Client"...');
   const createClientRes = await fetch(`${API_BASE}/clients`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
-      vertical: 'Roadshow',
+      type: 'Client', allowedQuantity: 1,
       bd: activeBD._id,
       name: `Unique Corp ${Date.now()}`,
       mobile: `98${Math.floor(10000000 + Math.random() * 90000000)}`,
@@ -83,7 +83,7 @@ async function runTests() {
     body: JSON.stringify({
       clientId,
       year: 2026,
-      vertical: 'Roadshow',
+      type: 'Client', quantity: 1, mode: 'IN_PERSON',
       bd: activeBD._id,
       notes: 'Delivered Royal Kaju Katli Box',
     }),
@@ -95,14 +95,14 @@ async function runTests() {
   console.log(`✓ 2026 Sweet distribution recorded successfully.`);
 
   // 6. Test Duplicate Prevention for same year
-  console.log('6. Testing duplicate distribution prevention for year 2026 (same client under different vertical)...');
+  console.log('6. Testing duplicate distribution prevention for year 2026 (same client under different type)...');
   const dupDistRes = await fetch(`${API_BASE}/distributions`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       clientId,
       year: 2026,
-      vertical: 'Outdoor',
+      type: 'Vendor', quantity: 1, mode: 'IN_PERSON',
       bd: activeBD._id,
     }),
   });
@@ -120,7 +120,7 @@ async function runTests() {
     body: JSON.stringify({
       clientId,
       year: 2027,
-      vertical: 'Roadshow',
+      type: 'Client', quantity: 1, mode: 'IN_PERSON',
       bd: activeBD._id,
     }),
   });

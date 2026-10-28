@@ -8,6 +8,7 @@ import clientRoutes from '../src/routes/clientRoutes.js';
 import distributionRoutes from '../src/routes/distributionRoutes.js';
 import { generateToken } from '../src/config/jwt.js';
 import { Client, ensureClientIndexes } from '../src/models/Client.js';
+import { ensureAssociationIndexes } from '../src/models/ClientAssociation.js';
 import { ClientAssociation } from '../src/models/ClientAssociation.js';
 import { SweetDistribution, ensureDistributionIndexes } from '../src/models/SweetDistribution.js';
 import { BD } from '../src/models/BD.js';
@@ -18,7 +19,7 @@ const ok = (label: string) => { passed++; console.log(`PASS: ${label}`); };
 async function main() {
   const mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
-  await ensureClientIndexes(); await ensureDistributionIndexes(); await ClientAssociation.init();
+  await ensureClientIndexes(); await ensureAssociationIndexes(); await ensureDistributionIndexes();
   const app = express(); app.use(express.json());
   app.use('/api/clients', clientRoutes); app.use('/api/distributions', distributionRoutes);
   const server = app.listen(0); const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
@@ -29,7 +30,7 @@ async function main() {
   };
   try {
     const [bd1, bd2] = await BD.create([{ name: 'BD One', email: 'one@adinn.com' }, { name: 'BD Two', email: 'two@adinn.com' }]);
-    const abc = { name: 'ABC Technologies', mobile: '9876500001', vertical: 'Outdoor', bd: String(bd1._id) };
+    const abc = { name: 'ABC Technologies', mobile: '9876500001', type: 'Vendor', bd: String(bd1._id) };
 
     // Global client identity
     assert.equal((await call('POST', '/clients', abc)).status, 201);
@@ -46,38 +47,38 @@ async function main() {
       ok(`duplicate with ${label} (new phone) is detected, no second client`);
     }
     // Client identity has no year, so a 2027 registration attempt goes through the same check.
-    const again = await call('POST', '/clients', { ...abc, mobile: '+91 98765 00001' });
+    const again = await call('POST', '/clients', { ...abc, mobile: '9876500001' });
     assert.equal(again.status, 409); assert.equal(again.body.matchedBy, 'mobile'); assert.equal(await Client.countDocuments(), 1);
-    ok('2027 re-registration attempt (same phone, different format) finds the existing client');
-    const different = await call('POST', '/clients', { name: 'ABC Technology Solutions', mobile: '9876500002', vertical: 'Outdoor', bd: String(bd1._id) });
+    ok('2027 re-registration attempt (same phone) finds the existing client');
+    const different = await call('POST', '/clients', { name: 'ABC Technology Solutions', mobile: '9876500002', type: 'Vendor', bd: String(bd1._id) });
     assert.equal(different.status, 201); assert.equal(await Client.countDocuments(), 2);
     ok('a similar-but-different business ("ABC Technology Solutions") is NOT merged');
 
     // Existing-client workflow
     let r = await call('POST', '/clients', { ...abc, confirmExisting: true });
     assert.equal(r.status, 409); assert.equal(r.body.code, 'ASSOCIATION_EXISTS');
-    assert.equal(await ClientAssociation.countDocuments({ vertical: 'Outdoor' }), 2);
-    ok('existing client + same Vertical + BD reuses the association (no duplicate)');
-    r = await call('POST', '/clients', { ...abc, vertical: 'Signage', bd: String(bd2._id), confirmExisting: true });
+    assert.equal(await ClientAssociation.countDocuments({ type: 'Vendor' }), 2);
+    ok('existing client + same Type + Requestee reuses the association (no duplicate)');
+    r = await call('POST', '/clients', { ...abc, type: 'Client', bd: String(bd2._id), confirmExisting: true });
     assert.equal(r.status, 201); assert.equal(await Client.countDocuments(), 2);
     assert.equal(await ClientAssociation.countDocuments({ client: r.body.data.clientId }), 2);
-    ok('existing client + new Vertical/BD adds only an association');
+    ok('existing client + new Type/Requestee adds only an association');
 
     // Concurrency
     const race = await Promise.all(Array.from({ length: 10 }, (_, i) => call('POST', '/clients',
-      { name: i % 2 ? 'Race Co' : '  race co ', mobile: i % 2 ? '9111111111' : '9222222222', vertical: 'Roadshow', bd: String(bd1._id) })));
+      { name: i % 2 ? 'Race Co' : '  race co ', mobile: i % 2 ? '9111111111' : '9222222222', type: 'Govt. Official', bd: String(bd1._id) })));
     assert.ok(race.every(x => [201, 409].includes(x.status)), JSON.stringify(race.map(x => x.status)));
     assert.equal(await Client.countDocuments({ normalizedName: 'race co' }), 1);
     ok('10 concurrent registrations (mixed case and phones) create exactly one "Race Co"');
 
     // Yearly distribution
     const acme = (await Client.findOne({ normalizedName: 'abc technologies' }))!;
-    const dist = (year: number, vertical = 'Outdoor', bd = bd1) => call('POST', '/distributions', { clientId: String(acme._id), year, vertical, bd: String(bd._id) });
+    const dist = (year: number, type = 'Vendor', bd = bd1) => call('POST', '/distributions', { clientId: String(acme._id), year, type, bd: String(bd._id), quantity: 1, mode: 'IN_PERSON' });
     const d2026 = await dist(2026);
     assert.equal(d2026.status, 201); ok('2026 distribution created');
     const before = await SweetDistribution.findById(d2026.body.data._id).lean();
     assert.equal((await dist(2026)).status, 409); ok('same client, same year, same dimensions is rejected');
-    assert.equal((await dist(2026, 'Signage', bd2)).status, 409); ok('same client, same year, different Vertical/BD is also rejected (once per year)');
+    assert.equal((await dist(2026, 'Client', bd2)).status, 409); ok('same client, same year, different Type/Requestee is also rejected (once per year)');
     assert.equal((await dist(2027)).status, 201); ok('2027 distribution for the same client is allowed');
     assert.deepEqual(await SweetDistribution.findById(d2026.body.data._id).lean(), before); ok('2026 record is unchanged after the 2027 record is created');
     assert.equal(await Client.countDocuments({ normalizedName: 'abc technologies' }), 1); ok('client identity is still a single record across years');

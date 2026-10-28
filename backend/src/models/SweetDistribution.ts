@@ -1,10 +1,18 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { VALID_VERTICALS, VerticalType } from './ClientAssociation.js';
+import { CLIENT_TYPES, ClientType, DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, DistributionMode } from '../config/distribution.js';
 
 export interface ISweetDistribution extends Document {
   client: mongoose.Types.ObjectId;
   distributionYear: number;
-  vertical: VerticalType;
+  type?: ClientType;
+  /** Pre-Type "Vertical" value, preserved for records created before Type existed. */
+  vertical?: string;
+  quantity?: number;
+  mode?: DistributionMode;
+  status?: DeliveryStatus;
+  statusHistory: { status: DeliveryStatus; at: Date; by?: mongoose.Types.ObjectId }[];
+  proof?: mongoose.Types.ObjectId;
+  deliveredAt?: Date;
   bd: mongoose.Types.ObjectId;
   distributedAt: Date;
   distributedBy?: mongoose.Types.ObjectId;
@@ -30,14 +38,23 @@ const SweetDistributionSchema = new Schema<ISweetDistribution>(
       required: [true, 'Distribution year is required'],
       index: true,
     },
-    vertical: {
-      type: String,
-      required: [true, 'Vertical is required'],
-      enum: {
-        values: VALID_VERTICALS,
-        message: '{VALUE} is not a valid vertical',
-      },
+    // quantity/mode/status are required by the API for new records; they are absent on pre-existing ones.
+    type: { type: String, enum: { values: CLIENT_TYPES, message: '{VALUE} is not a valid type' } },
+    vertical: { type: String },
+    quantity: { type: Number, min: 1, validate: { validator: Number.isInteger, message: 'Quantity must be a whole number' } },
+    mode: { type: String, enum: { values: DISTRIBUTION_MODES, message: '{VALUE} is not a valid mode' } },
+    status: { type: String, enum: { values: DELIVERY_STATUSES, message: '{VALUE} is not a valid status' } },
+    statusHistory: {
+      type: [{
+        _id: false,
+        status: { type: String, enum: DELIVERY_STATUSES, required: true },
+        at: { type: Date, required: true },
+        by: { type: Schema.Types.ObjectId, ref: 'User' },
+      }],
+      default: [],
     },
+    proof: { type: Schema.Types.ObjectId, ref: 'DeliveryProof' },
+    deliveredAt: Date,
     bd: {
       type: Schema.Types.ObjectId,
       ref: 'BD',
@@ -71,8 +88,9 @@ const SweetDistributionSchema = new Schema<ISweetDistribution>(
 SweetDistributionSchema.index({ client: 1, distributionYear: 1 }, {
   unique: true, name: 'active_client_year_unique', partialFilterExpression: { isReverted: false },
 });
-// Index for year + vertical + bd filtering
-SweetDistributionSchema.index({ distributionYear: 1, vertical: 1, bd: 1 });
+// Indexes for year + type + requestee and year + mode + status filtering
+SweetDistributionSchema.index({ distributionYear: 1, type: 1, bd: 1 });
+SweetDistributionSchema.index({ distributionYear: 1, mode: 1, status: 1 });
 
 export const SweetDistribution = mongoose.model<ISweetDistribution>(
   'SweetDistribution',

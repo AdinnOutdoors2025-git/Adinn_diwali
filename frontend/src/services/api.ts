@@ -1,4 +1,5 @@
-import { BD, ClientRecord, DistributionRow, User, VerticalType } from '../types';
+import { BD, ClientRecord, DistributionRow, User } from '../types';
+import type { ClientType, DeliveryStatus, DistributionMode } from '../config/distribution';
 
 const API_BASE_URL = '/api';
 
@@ -118,9 +119,9 @@ export const api = {
   },
 
   // Clients (Add Page: Management only, NO distribution)
-  async getClients(vertical: VerticalType, bdId: string, search = '', page = 1, limit = 10) {
+  async getClients(type: ClientType, bdId: string, search = '', page = 1, limit = 10) {
     const params = new URLSearchParams({
-      vertical,
+      type,
       bd: bdId,
       page: page.toString(),
       limit: limit.toString(),
@@ -144,7 +145,7 @@ export const api = {
     }>(res);
   },
 
-  async createClient(data: { vertical: VerticalType; bd: string; name: string; mobile: string; email?: string; confirmExisting?: boolean }) {
+  async createClient(data: { type: ClientType; bd: string; name: string; mobile: string; email?: string; allowedQuantity?: number; confirmExisting?: boolean }) {
     const res = await fetch(`${API_BASE_URL}/clients`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -153,7 +154,7 @@ export const api = {
     return handleResponse<{ success: boolean; message: string; data: ClientRecord }>(res);
   },
 
-  async updateClient(id: string, data: { name?: string; mobile?: string; email?: string }) {
+  async updateClient(id: string, data: { name?: string; mobile?: string; email?: string; allowedQuantity?: number; type?: ClientType }) {
     const res = await fetch(`${API_BASE_URL}/clients/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
@@ -170,11 +171,11 @@ export const api = {
     return handleResponse<{ success: boolean; message: string }>(res);
   },
 
-  async bulkImportClients(vertical: VerticalType, bd: string, records: Array<{ name: string; mobile: string; email?: string }>) {
+  async bulkImportClients(records: Array<{ name: string; mobile: string; email?: string; type: ClientType; requestee: string; allowedQuantity?: number }>) {
     const res = await fetch(`${API_BASE_URL}/clients/bulk-import`, {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ vertical, bd, records }),
+      body: JSON.stringify({ records }),
     });
     return handleResponse<{
       success: boolean;
@@ -197,10 +198,12 @@ export const api = {
   // Distributions (Entry Page: Annual Sweet Distribution Tracking)
   async getDistributions(params: {
     year: number;
-    vertical?: string;
+    type?: string;
     bd?: string;
     search?: string;
     status?: 'ALL' | 'GIVEN' | 'NOT_GIVEN';
+    mode?: 'ALL' | DistributionMode;
+    deliveryStatus?: 'ALL' | DeliveryStatus;
     page?: number;
     limit?: number;
   }) {
@@ -211,8 +214,12 @@ export const api = {
       status: params.status || 'ALL',
     });
 
-    if (params.vertical && params.vertical !== 'ALL') {
-      query.append('vertical', params.vertical);
+    if (params.type && params.type !== 'ALL') {
+      query.append('type', params.type);
+    }
+    if (params.mode && params.mode !== 'ALL') {
+      query.append('mode', params.mode);
+      if (params.deliveryStatus && params.deliveryStatus !== 'ALL') query.append('deliveryStatus', params.deliveryStatus);
     }
     if (params.bd && params.bd !== 'ALL') {
       query.append('bd', params.bd);
@@ -240,8 +247,10 @@ export const api = {
   async createDistribution(data: {
     clientId: string;
     year: number;
-    vertical: VerticalType;
+    type: ClientType;
     bd: string;
+    quantity: number;
+    mode: DistributionMode;
     notes?: string;
   }) {
     const res = await fetch(`${API_BASE_URL}/distributions`, {
@@ -250,6 +259,27 @@ export const api = {
       body: JSON.stringify(data),
     });
     return handleResponse<{ success: boolean; message: string; data: any }>(res);
+  },
+
+  // Multipart: the proof is sent with the status change so Delivered and its proof succeed or fail together.
+  async updateDeliveryStatus(id: string, status: DeliveryStatus, proof?: File) {
+    const token = localStorage.getItem('adinn_diwali_token');
+    const form = new FormData();
+    form.append('status', status);
+    if (proof) form.append('proof', proof, proof.name);
+    const res = await fetch(`${API_BASE_URL}/distributions/${id}/status`, {
+      method: 'PATCH',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    return handleResponse<{ success: boolean; message: string; data: { status: DeliveryStatus; hasProof: boolean } }>(res);
+  },
+
+  // The proof route needs the bearer token, so it is fetched as a blob rather than linked directly.
+  async getDeliveryProof(id: string): Promise<Blob> {
+    const res = await fetch(`${API_BASE_URL}/distributions/${id}/proof`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new ApiError(res.status === 404 ? 'No delivery proof on file.' : 'Unable to load delivery proof.');
+    return res.blob();
   },
 
   async revertDistribution(id: string, reason: string) {

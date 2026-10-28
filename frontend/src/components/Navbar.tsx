@@ -34,7 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
       return [
         { label: 'Staff Portal', path: '/staff' },
         { label: 'Add', path: '/staff/add' },
-        { label: 'Client & BD Management', path: '/staff/add' },
+        { label: 'Client & Requestee Management', path: '/staff/add' },
       ];
     }
     if (path === '/staff') {

@@ -20,7 +20,7 @@ export const StaffHome: React.FC = () => {
             Welcome, {user?.name || 'Staff Member'}!
           </h1>
           <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-            Record annual Diwali sweet distribution and manage client/vendor registrations across all 10 business verticals and Business Developers.
+            Record annual Diwali sweet distribution and manage client/vendor registrations across all client types and Requestees.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
@@ -36,7 +36,7 @@ export const StaffHome: React.FC = () => {
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs sm:text-sm border border-slate-700 transition-colors"
             >
               <UserPlus className="w-4 h-4" />
-              <span>Add Clients & BDs</span>
+              <span>Add Clients & Requestees</span>
             </Link>
           </div>
         </div>
@@ -56,7 +56,7 @@ export const StaffHome: React.FC = () => {
           </div>
           <h2 className="text-base font-bold text-slate-900">Entry &rarr; Sweet Distribution</h2>
           <p className="mt-1 text-xs text-slate-500 leading-relaxed">
-            Track and record sweet distribution per client by year, vertical, and BD. Enforces one box per year across all verticals.
+            Track and record sweet distribution per client by year, type, and Requestee. Enforces one box per year across all types.
           </p>
           <div className="mt-5">
             <Link
@@ -73,9 +73,9 @@ export const StaffHome: React.FC = () => {
           <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center mb-4">
             <UserPlus className="w-5 h-5" />
           </div>
-          <h2 className="text-base font-bold text-slate-900">Add &rarr; Client & BD Management</h2>
+          <h2 className="text-base font-bold text-slate-900">Add &rarr; Client & Requestee Management</h2>
           <p className="mt-1 text-xs text-slate-500 leading-relaxed">
-            Register Business Developers, manage client and vendor details, and upload Excel rosters without creating distribution logs.
+            Register Requestees, manage client and vendor details, and upload Excel rosters without creating distribution logs.
           </p>
           <div className="mt-5">
             <Link

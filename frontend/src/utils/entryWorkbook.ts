@@ -1,8 +1,9 @@
 import * as XLSX from 'xlsx';
-import { BD, DistributionRow, VERTICAL_OPTIONS } from '../types';
+import { BD, DistributionRow, TYPE_OPTIONS } from '../types';
+import { MODE_LABEL, STATUS_LABEL } from '../config/distribution';
 
 export interface EntryExportFilters {
-  year: number; vertical: string; bd: string; status: 'ALL' | 'GIVEN' | 'NOT_GIVEN'; search: string;
+  year: number; type: string; bd: string; status: 'ALL' | 'GIVEN' | 'NOT_GIVEN'; mode: string; deliveryStatus: string; search: string;
 }
 const theme = { navy: '14213D', orange: 'F59E0B', gold: 'FCD34D', ivory: 'FFFBEB', white: 'FFFFFF', green: '059669', rose: 'E11D48', slate: '64748B' };
 const ns = { sheet: 'http://schemas.openxmlformats.org/spreadsheetml/2006/main', rel: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
@@ -72,11 +73,11 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
   const given = rows.filter(row => !row.isEligible).length, pending = rows.length - given;
   const selectedBD = bds.find(row => row._id === filters.bd);
   if (filters.bd !== 'ALL' && !selectedBD) throw new Error('Selected BD is no longer in the master list');
-  const verticals = VERTICAL_OPTIONS.map(vertical => {
-    const clients = rows.filter(row => row.associations.some(link => link.vertical === vertical));
+  const types = TYPE_OPTIONS.map(type => {
+    const clients = rows.filter(row => row.associations.some(link => link.type === type));
     const completed = clients.filter(row => !row.isEligible).length;
-    return { name: vertical, registered: clients.length, given: completed, pending: clients.length - completed,
-      percent: percentage(completed, clients.length), credited: rows.filter(row => row.currentYearDistribution?.vertical === vertical).length };
+    return { name: type, registered: clients.length, given: completed, pending: clients.length - completed,
+      percent: percentage(completed, clients.length), credited: rows.filter(row => row.currentYearDistribution?.type === type).length };
   });
   const bdGroups = bds.map(bd => {
     const clients = rows.filter(row => row.associations.some(link => link.bd?._id === bd._id));
@@ -88,12 +89,14 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
   const chartRows = chartBDs.length ? chartBDs : [{ name: '', email: '', registered: 0, given: 0, pending: 0, credited: 0 }];
   const summary: Matrix = [];
   const put = (row: number, column: number, value: Value, style = 0) => { summary[row - 1] ||= []; summary[row - 1][column - 1] = { value, style }; };
-  const merges = ['A1:L2', 'E3:L3', 'B4:C4', 'E4:L4', 'B5:L5', 'B6:C6', 'E6:L6', 'A12:L12', 'A13:L13', 'A14:L14', 'A15:L15'];
+  const merges = ['A1:L2', 'E3:L3', 'B4:C4', 'E4:L4', 'B5:C5', 'E5:L5', 'B6:C6', 'E6:L6', 'A12:L12', 'A13:L13', 'A14:L14', 'A15:L15'];
   put(1, 1, 'ADINN | Diwali Sweet Distribution Report', 1);
   put(3, 1, 'Diwali year', 2); put(3, 2, filters.year, 24); put(3, 4, 'Generated (IST)', 2); put(3, 5, dateText(new Date().toISOString()), 22);
-  put(4, 1, 'Vertical', 2); put(4, 2, filters.vertical === 'ALL' ? 'All Verticals' : filters.vertical);
-  put(4, 4, 'BD', 2); put(4, 5, selectedBD ? `${selectedBD.name} (${selectedBD.email})` : 'All Business Developers');
+  put(4, 1, 'Type', 2); put(4, 2, filters.type === 'ALL' ? 'All Types' : filters.type);
+  put(4, 4, 'Requestee Name', 2); put(4, 5, selectedBD ? `${selectedBD.name} (${selectedBD.email})` : 'All Requestees');
   put(5, 1, 'Search', 2); put(5, 2, filters.search || 'All clients');
+  put(5, 4, 'Mode / Stage', 2);
+  put(5, 5, filters.mode === 'ALL' ? 'All Modes' : `${MODE_LABEL[filters.mode as keyof typeof MODE_LABEL] ?? filters.mode}${filters.deliveryStatus === 'ALL' ? ' - all stages' : ` - ${STATUS_LABEL[filters.deliveryStatus as keyof typeof STATUS_LABEL] ?? filters.deliveryStatus}`}`);
   put(6, 1, 'Status', 2); put(6, 2, filters.status === 'ALL' ? 'All' : filters.status === 'GIVEN' ? 'Given' : 'Not Given');
   put(6, 4, 'Scope', 2); put(6, 5, `${rows.length} distinct matching clients`);
   const kpis = [
@@ -105,50 +108,53 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
   ];
   for (const kpi of kpis) { put(8, kpi.start + 1, kpi.title, 17); put(9, kpi.start + 1, kpi.value, kpi.style); merges.push(`${col(kpi.start)}8:${col(kpi.end)}8`, `${col(kpi.start)}9:${col(kpi.end)}10`); }
   put(12, 1, 'REPORTING BASIS', 16);
-  put(13, 1, 'A client is counted once overall. Given means an active, non-reverted distribution exists for the selected year, across all Verticals and BDs.', 22);
-  put(14, 1, 'Vertical/BD groups may overlap. Group Given and completion rates use global client status; completed distributions are credited once to the recorded Vertical/BD.', 22);
+  put(13, 1, 'A client is counted once overall. Given means an active, non-reverted distribution exists for the selected year, across all Types and Requestees.', 22);
+  put(14, 1, 'Type/Requestee groups may overlap. Group Given and completion rates use global client status; completed distributions are credited once to the recorded Type/Requestee.', 22);
   put(15, 1, 'Times are shown in IST. Distribution Marked is when sweets were recorded, not the client creation date.', 22);
   const headers = (row: number, values: string[]) => values.forEach((value, index) => put(row, index + 1, value, 3));
   headers(17, ['Distribution Status', 'Clients']); put(18, 1, 'Given', 6); put(18, 2, given, 10); put(19, 1, 'Not Given', 8); put(19, 2, pending, 10);
-  headers(21, ['Vertical', 'Eligible clients', 'Given', 'Not Given', 'Completion', 'Completed here']);
-  verticals.forEach((row, index) => [row.name, row.registered, row.given, row.pending, row.percent, row.credited].forEach((value, column) => put(index + 22, column + 1, value, column === 4 ? 12 : column ? 10 : 4)));
-  headers(33, ['BD Name', 'BD Email', 'Associated clients', 'Given', 'Not Given', 'Completed by BD']);
+  headers(21, ['Type', 'Eligible clients', 'Given', 'Not Given', 'Completion', 'Completed here']);
+  types.forEach((row, index) => [row.name, row.registered, row.given, row.pending, row.percent, row.credited].forEach((value, column) => put(index + 22, column + 1, value, column === 4 ? 12 : column ? 10 : 4)));
+  headers(33, ['Requestee Name', 'Requestee Email', 'Associated clients', 'Given', 'Not Given', 'Completed by Requestee']);
   chartRows.forEach((row, index) => [row.name, row.email, row.registered, row.given, row.pending, row.credited].forEach((value, column) => put(index + 34, column + 1, value, column >= 2 ? 10 : 4)));
   const chartTop = Math.max(40, chartRows.length + 37), chartBottom = chartTop + 19;
 
-  const headings = ['S.No.', 'Client/Vendor Name', 'Phone Number', 'Email', 'Vertical', 'BD', 'BD Email', 'Created At (IST)', 'Distribution Year', 'Distribution Status', 'Distribution Marked', 'Last Given Year'];
+  const headings = ['S.No.', 'Client/Vendor Name', 'Phone Number', 'Email', 'Type', 'Requestee Name', 'Requestee Email', 'Created At (IST)', 'Distribution Year', 'Allowed Quantity', 'Distribution Quantity', 'Mode', 'Status', 'Distribution Status', 'Distribution Marked', 'Last Given Year'];
   const details: Matrix = [headings];
   const detailHeights: Record<number, number> = { 1: 36 };
+  const STATUS_COL = 13, DATE_COLS = [7, 14], NUMBER_COLS = [0, 8, 9, 10, 15];
   rows.forEach((row, index) => {
-    const values: Value[] = [index + 1, row.clientName, row.clientMobile, row.clientEmail || '', row.associations.map(link => link.vertical).join('\n'),
+    const given = row.currentYearDistribution;
+    const values: Value[] = [index + 1, row.clientName, row.clientMobile, row.clientEmail || '', row.associations.map(link => link.type ?? 'Unassigned').join('\n'),
       row.associations.map(link => link.bd?.name || '').join('\n'), row.associations.map(link => link.bd?.email || '').join('\n'), dateText(row.createdAt), filters.year,
-      row.isEligible ? 'Not Given' : 'Given', dateText(row.currentYearDistribution?.distributedAt), row.lastGiven ?? ''];
-    details.push(values.map((value, column) => ({ value, style: column === 9 ? (row.isEligible ? 8 : 6) + index % 2 : [7, 10].includes(column) ? 14 + index % 2 : [0, 8, 11].includes(column) ? 24 + index % 2 : 4 + index % 2 })));
+      row.allowedQuantity ?? 1, given?.quantity ?? '', given?.mode ? MODE_LABEL[given.mode] : '', given?.status ? STATUS_LABEL[given.status] : '',
+      row.isEligible ? 'Not Given' : 'Given', dateText(given?.distributedAt), row.lastGiven ?? ''];
+    details.push(values.map((value, column) => ({ value, style: column === STATUS_COL ? (row.isEligible ? 8 : 6) + index % 2 : DATE_COLS.includes(column) ? 14 + index % 2 : NUMBER_COLS.includes(column) ? 24 + index % 2 : 4 + index % 2 })));
     detailHeights[index + 2] = Math.max(34, row.associations.length * 18 + 14);
   });
   const table = (header: string[], data: Value[][], percentCol: number): Matrix => [header, ...data.map((row, index) => row.map((value, column) => ({ value, style: column === percentCol ? 12 + index % 2 : typeof value === 'number' ? 10 + index % 2 : 4 + index % 2 })))];
-  const verticalTable = table(['Vertical', 'Eligible clients/vendors', 'Given', 'Not Given', 'Completion percentage', 'Completed here'], verticals.map(row => [row.name, row.registered, row.given, row.pending, row.percent, row.credited]), 4);
-  const bdTable = table(['BD Name', 'BD Email', 'Associated clients/vendors', 'Given (any BD)', 'Not Given', 'Distributions completed', 'Completion percentage'], bdGroups.map(row => [row.name, row.email, row.registered, row.given, row.pending, row.credited, row.percent]), 6);
+  const typeTable = table(['Type', 'Eligible clients/vendors', 'Given', 'Not Given', 'Completion percentage', 'Completed here'], types.map(row => [row.name, row.registered, row.given, row.pending, row.percent, row.credited]), 4);
+  const bdTable = table(['Requestee Name', 'Requestee Email', 'Associated clients/vendors', 'Given (any Requestee)', 'Not Given', 'Distributions completed', 'Completion percentage'], bdGroups.map(row => [row.name, row.email, row.registered, row.given, row.pending, row.credited, row.percent]), 6);
   const parts: Record<string, string> = {
     'xl/styles.xml': styles(),
     'xl/worksheets/sheet1.xml': worksheet(summary, { widths: [28, 30, 16, 18, 20, 20, 16, 16, 16, 16, 16, 16], frozen: 7, merges, drawing: true, minRows: chartBottom, defaultHeight: 24, pageBreak: chartTop,
       heights: { ...Object.fromEntries(Array.from({ length: chartBottom - chartTop + 1 }, (_, index) => [chartTop + index + 1, 16])), 1: 30, 2: 10, 3: 26, 4: 32, 5: 28, 6: 26, 7: 10, 8: 32, 9: 30, 10: 10, 11: 10, 12: 26, 13: 32, 14: 36, 15: 32, 16: 10, 17: 30, 21: 32, 33: 32 } }),
-    'xl/worksheets/sheet2.xml': worksheet(details, { widths: [8, 32, 20, 30, 26, 30, 32, 26, 16, 22, 26, 16], filter: true, heights: detailHeights }),
-    'xl/worksheets/sheet3.xml': worksheet(verticalTable, { widths: [30, 26, 16, 18, 24, 22], filter: true }),
+    'xl/worksheets/sheet2.xml': worksheet(details, { widths: [8, 32, 20, 30, 26, 30, 32, 26, 16, 16, 18, 14, 16, 20, 26, 16], filter: true, heights: detailHeights }),
+    'xl/worksheets/sheet3.xml': worksheet(typeTable, { widths: [30, 26, 16, 18, 24, 22], filter: true }),
     'xl/worksheets/sheet4.xml': worksheet(bdTable, { widths: [34, 38, 26, 22, 18, 26, 24], filter: true }),
   };
   const range = (column: string, start: number, count: number) => `'Summary'!$${column}$${start}:$${column}$${start + count - 1}`;
   parts['xl/charts/chart1.xml'] = chart('Given vs Not Given', ['Given', 'Not Given'], range('A', 18, 2), [{ name: 'Clients', formula: range('B', 18, 2), values: [given, pending], color: theme.green }], 'donut');
-  parts['xl/charts/chart2.xml'] = chart('Vertical-wise Distribution', verticals.map(row => row.name), range('A', 22, verticals.length), [
-    { name: 'Eligible clients', formula: range('B', 22, verticals.length), values: verticals.map(row => row.registered), color: theme.navy },
-    { name: 'Given (any BD)', formula: range('C', 22, verticals.length), values: verticals.map(row => row.given), color: theme.orange },
+  parts['xl/charts/chart2.xml'] = chart('Type-wise Distribution', types.map(row => row.name), range('A', 22, types.length), [
+    { name: 'Eligible clients', formula: range('B', 22, types.length), values: types.map(row => row.registered), color: theme.navy },
+    { name: 'Given (any Requestee)', formula: range('C', 22, types.length), values: types.map(row => row.given), color: theme.orange },
   ], 'vertical');
   const positions = [[0, chartTop, 6, chartTop + 17], [6, chartTop, 12, chartTop + 17]];
   parts['xl/drawings/drawing1.xml'] = declaration + `<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="${ns.drawing}">${positions.map(([left, top, right, bottom], index) => `<xdr:twoCellAnchor><xdr:from><xdr:col>${left}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${top}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>${right}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${bottom}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="${index + 1}" name="ADINN Chart ${index + 1}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="${ns.chart}"><c:chart xmlns:c="${ns.chart}" xmlns:r="${ns.rel}" r:id="rId${index + 1}"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>`).join('')}</xdr:wsDr>`;
   parts['xl/drawings/_rels/drawing1.xml.rels'] = declaration + `<Relationships xmlns="${ns.package}">${[1, 2].map(index => `<Relationship Id="rId${index}" Type="${ns.rel}/chart" Target="../charts/chart${index}.xml"/>`).join('')}</Relationships>`;
   parts['xl/worksheets/_rels/sheet1.xml.rels'] = declaration + `<Relationships xmlns="${ns.package}"><Relationship Id="rIdDrawing" Type="${ns.rel}/drawing" Target="../drawings/drawing1.xml"/></Relationships>`;
-  const sheetNames = ['Summary', 'Distribution Details', 'Vertical Analytics', 'BD Analytics'];
-  const printAreas = [`A1:L${chartBottom + 1}`, `A1:L${details.length}`, `A1:F${verticalTable.length}`, `A1:G${bdTable.length}`];
+  const sheetNames = ['Summary', 'Distribution Details', 'Type Analytics', 'Requestee Analytics'];
+  const printAreas = [`A1:L${chartBottom + 1}`, `A1:P${details.length}`, `A1:F${typeTable.length}`, `A1:G${bdTable.length}`];
   parts['xl/workbook.xml'] = declaration + `<workbook xmlns="${ns.sheet}" xmlns:r="${ns.rel}"><bookViews><workbookView/></bookViews><sheets>${sheetNames.map((name, index) => `<sheet name="${name}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join('')}</sheets><definedNames>${sheetNames.map((name, index) => `<definedName name="_xlnm.Print_Titles" localSheetId="${index}">'${xml(name)}'!$1:$${index ? 1 : 6}</definedName><definedName name="_xlnm.Print_Area" localSheetId="${index}">'${xml(name)}'!${printAreas[index]}</definedName>`).join('')}</definedNames></workbook>`;
   parts['xl/_rels/workbook.xml.rels'] = declaration + `<Relationships xmlns="${ns.package}">${[1, 2, 3, 4].map(index => `<Relationship Id="rId${index}" Type="${ns.rel}/worksheet" Target="worksheets/sheet${index}.xml"/>`).join('')}<Relationship Id="rIdStyles" Type="${ns.rel}/styles" Target="styles.xml"/></Relationships>`;
   parts['_rels/.rels'] = declaration + `<Relationships xmlns="${ns.package}"><Relationship Id="rIdWorkbook" Type="${ns.rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>`;

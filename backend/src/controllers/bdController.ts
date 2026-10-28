@@ -13,7 +13,7 @@ export const getBDs = async (req: Request, res: Response): Promise<void> => {
     });
   } catch (error: any) {
     console.error('Error fetching BDs:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch BDs', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to fetch Requestees', error: error.message });
   }
 };
 
@@ -21,17 +21,21 @@ export const createBD = async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, email } = req.body;
 
-    if (!name || !name.trim()) {
-      res.status(400).json({ success: false, message: 'BD Name is required' });
+    if (typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ success: false, message: 'Requestee Name is required' });
       return;
     }
 
-    if (!email || !email.trim()) {
-      res.status(400).json({ success: false, message: 'BD Email ID is required' });
+    if (typeof email !== 'string' || !email.trim()) {
+      res.status(400).json({ success: false, message: 'Requestee Email ID is required' });
       return;
     }
 
-    const trimmedName = name.trim();
+    const trimmedName = name.trim().replace(/\s+/g, ' ');
+    if (trimmedName.length > 120) {
+      res.status(400).json({ success: false, message: 'Requestee Name must be 120 characters or fewer' });
+      return;
+    }
     const trimmedEmail = email.trim().toLowerCase();
 
     // Email format validation
@@ -46,19 +50,19 @@ export const createBD = async (req: Request, res: Response): Promise<void> => {
     if (existingByEmail) {
       res.status(409).json({
         success: false,
-        message: `A Business Developer with email "${trimmedEmail}" already exists (${existingByEmail.name}).`,
+        message: `A Requestee with email "${trimmedEmail}" already exists (${existingByEmail.name}).`,
       });
       return;
     }
 
-    // Check duplicate by exact name (case-insensitive)
+    // Check duplicate by name (case-insensitive, ignoring extra spaces)
     const existingByName = await BD.findOne({
-      name: { $regex: new RegExp(`^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      name: { $regex: new RegExp(`^\\s*${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')}\\s*$`, 'i') },
     });
     if (existingByName) {
       res.status(409).json({
         success: false,
-        message: `A Business Developer with name "${existingByName.name}" already exists with email ${existingByName.email}.`,
+        message: `A Requestee with name "${existingByName.name}" already exists with email ${existingByName.email}.`,
       });
       return;
     }
@@ -70,16 +74,16 @@ export const createBD = async (req: Request, res: Response): Promise<void> => {
 
     res.status(201).json({
       success: true,
-      message: 'Business Developer created successfully',
+      message: 'Requestee created successfully',
       data: newBD,
     });
   } catch (error: any) {
     console.error('Error creating BD:', error);
     if (error.code === 11000) {
-      res.status(409).json({ success: false, message: 'BD with this email already exists' });
+      res.status(409).json({ success: false, message: 'Requestee with this email already exists' });
       return;
     }
-    res.status(500).json({ success: false, message: 'Failed to create BD', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to create Requestee', error: error.message });
   }
 };
 
@@ -88,13 +92,13 @@ export const deleteBD = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      res.status(400).json({ success: false, message: 'Invalid BD ID' });
+      res.status(400).json({ success: false, message: 'Invalid Requestee ID' });
       return;
     }
 
     const bd = await BD.findByIdAndDelete(id);
     if (!bd) {
-      res.status(404).json({ success: false, message: 'Business Developer not found' });
+      res.status(404).json({ success: false, message: 'Requestee not found' });
       return;
     }
 
@@ -103,10 +107,10 @@ export const deleteBD = async (req: Request, res: Response): Promise<void> => {
 
     res.status(200).json({
       success: true,
-      message: `Business Developer "${bd.name}" and associated records removed successfully.`,
+      message: `Requestee "${bd.name}" and associated records removed successfully.`,
     });
   } catch (error: any) {
     console.error('Error deleting BD:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete BD', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to delete Requestee', error: error.message });
   }
 };

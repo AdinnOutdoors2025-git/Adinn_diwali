@@ -1,5 +1,7 @@
 import React from 'react';
-import { BD, VERTICAL_OPTIONS } from '../types';
+import { BD, TYPE_OPTIONS } from '../types';
+import { MAX_ALLOWED_QUANTITY } from '../config/distribution';
+import { SearchableSelect } from './SearchableSelect';
 
 export interface ClientDraft {
   key: string;
@@ -9,8 +11,13 @@ export interface ClientDraft {
   email: string;
   saving: boolean;
   error: string;
-  vertical?: string;
+  /** Stored phone of an edited record, so an untouched older-format number is not rejected. */
+  originalMobile?: string;
+  type?: string;
   bd?: string;
+  allowedQuantity?: string;
+  /** Existing Type on an edited record; only records created before Type existed may be assigned one. */
+  typeLocked?: boolean;
 }
 
 interface Props {
@@ -20,32 +27,43 @@ interface Props {
   onCancel: () => void;
   distributionBDs?: BD[];
   bdState?: 'loading' | 'ready' | 'error';
+  /** Offered in the Requestee dropdown when a search finds nobody. */
+  onCreateRequestee?: (term: string) => void;
 }
 
-export const InlineClientRow: React.FC<Props> = ({ draft, onChange, onSave, onCancel, distributionBDs, bdState = 'ready' }) => (
+const inputClass = 'w-full min-w-[150px] px-3 py-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 disabled:opacity-60';
+
+export const InlineClientRow: React.FC<Props> = ({ draft, onChange, onSave, onCancel, distributionBDs, bdState = 'ready', onCreateRequestee }) => (
   <tr className="bg-amber-50/50 align-top" data-draft-row={draft.key}>
-    <td className="p-3 text-xs text-slate-500">{draft.associationId ? 'Edit' : 'New'}</td>
+    <td className="p-4 text-xs text-slate-500">{draft.associationId ? 'Edit' : 'New'}</td>
     {(['name', 'mobile', 'email'] as const).map(field => (
-      <td key={field} className="p-3">
+      <td key={field} className="p-4">
         <input aria-label={field === 'name' ? 'Client/Vendor Name' : field === 'mobile' ? distributionBDs ? 'Phone Number' : 'Mobile Number' : 'Email ID (Optional)'}
           type={field === 'email' ? 'email' : field === 'mobile' ? 'tel' : 'text'}
+          {...(field === 'mobile' ? { inputMode: 'numeric' as const, maxLength: 15, placeholder: '10-digit number', title: '10 digits, numbers only' } : {})}
           required={field !== 'email'} value={draft[field]} disabled={draft.saving}
-          autoFocus={field === 'name'} onChange={event => onChange({ [field]: event.target.value, error: '' })}
+          autoFocus={field === 'name'} onChange={event => onChange({ [field]: field === 'mobile' ? event.target.value.replace(/\D/g, '').slice(0, 10) : event.target.value, error: '' })}
           onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); onSave(); } }}
-          className="w-full min-w-[150px] px-2.5 py-2 text-xs border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 disabled:opacity-60" />
+          className={inputClass} />
       </td>
     ))}
     {distributionBDs && <>
-      <td className="p-3"><select aria-label="Client Vertical" value={draft.vertical || ''} disabled={draft.saving || !!draft.associationId} onChange={event => onChange({ vertical: event.target.value, error: '' })} className="w-40 border border-slate-300 rounded-md p-2 text-xs bg-white">
-        <option value="">Select Vertical</option>{VERTICAL_OPTIONS.map(value => <option key={value}>{value}</option>)}
-      </select></td>
-      <td className="p-3"><select aria-label="Client BD" value={draft.bd || ''} disabled={draft.saving || !!draft.associationId} onChange={event => onChange({ bd: event.target.value, error: '' })} className="w-44 border border-slate-300 rounded-md p-2 text-xs bg-white">
-        <option value="">{bdState === 'loading' ? 'Loading BDs...' : bdState === 'error' ? 'BDs unavailable' : !distributionBDs.length ? 'No BDs available' : 'Select BD'}</option>{distributionBDs.map(bd => <option key={bd._id} value={bd._id}>{bd.name} ({bd.email})</option>)}
-      </select></td>
-      <td className="p-3 text-slate-500">{distributionBDs.find(bd => bd._id === draft.bd)?.email || '\u2014'}</td>
-      <td className="p-3 text-slate-400">&mdash;</td><td className="p-3 text-slate-400">&mdash;</td>
+      <td className="p-4 min-w-[11rem]"><SearchableSelect ariaLabel="Client Type" size="sm" clearable={false} value={draft.type || ''} disabled={draft.saving || (!!draft.associationId && !!draft.typeLocked)}
+        onChange={value => onChange({ type: value, error: '' })} placeholder="Select Type" options={TYPE_OPTIONS.map(value => ({ value, label: value }))} /></td>
+      <td className="p-4 min-w-[16rem]"><SearchableSelect ariaLabel="Client Requestee" size="sm" avatars searchable onCreate={onCreateRequestee} createLabel="Add Requestee" clearable={false} value={draft.bd || ''} disabled={draft.saving || !!draft.associationId}
+        onChange={value => onChange({ bd: value, error: '' })}
+        placeholder={bdState === 'loading' ? 'Loading Requestees...' : bdState === 'error' ? 'Requestees unavailable' : !distributionBDs.length ? 'No Requestees available' : 'Select Requestee'}
+        options={distributionBDs.map(bd => ({ value: bd._id, label: bd.name, subtext: bd.email }))} /></td>
+      <td className="p-4 text-slate-500">{distributionBDs.find(bd => bd._id === draft.bd)?.email || '—'}</td>
+      <td className="p-4"><input aria-label="Allowed Quantity" type="number" inputMode="numeric" min={1} max={MAX_ALLOWED_QUANTITY} step={1}
+        value={draft.allowedQuantity ?? '1'} disabled={draft.saving}
+        onChange={event => onChange({ allowedQuantity: event.target.value, error: '' })}
+        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); onSave(); } }}
+        className="w-20 px-3 py-2.5 text-sm border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 disabled:opacity-60" /></td>
+      <td className="p-4 text-slate-400">&mdash;</td><td className="p-4 text-slate-400">&mdash;</td>
+      <td className="p-4 text-slate-400">&mdash;</td><td className="p-4 text-slate-400">&mdash;</td>
     </>}
-    <td className="p-3 min-w-[160px]">
+    <td className="p-4 min-w-[160px]">
       <div className="flex gap-2">
         <button type="button" onClick={onSave} disabled={draft.saving} className="px-3 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-md disabled:opacity-50">{draft.saving ? 'Saving...' : 'Save'}</button>
         <button type="button" onClick={onCancel} disabled={draft.saving} className="px-3 py-2 text-xs border border-slate-300 rounded-md bg-white disabled:opacity-50">Cancel</button>

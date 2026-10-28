@@ -12,6 +12,11 @@ export const normalizeMobile = (mobile: string): string => {
   return digits;
 };
 
+// New and changed phone numbers: exactly 10 digits, nothing else (no +91, spaces or dashes).
+export const PHONE_MESSAGE = 'Phone number must be exactly 10 digits (numbers only)';
+export const isTenDigitMobile = (mobile: string): boolean => /^\d{10}$/.test(mobile.trim());
+
+// Lenient legacy check, only used for records saved before the 10-digit rule.
 export const isValidMobile = (mobile: string): boolean => {
   const digits = mobile.replace(/\D/g, '');
   return digits.length >= 7 && digits.length <= 15 && /^[+\d\s().-]+$/.test(mobile);
@@ -25,6 +30,7 @@ export const findOrCreateClient = async (data: {
   name: string;
   mobile: string;
   email?: string;
+  allowedQuantity?: number;
 }): Promise<{ client: IClient; isNew: boolean }> => {
   const trimmedName = data.name.trim();
   const trimmedMobile = data.mobile.trim();
@@ -60,6 +66,7 @@ export const findOrCreateClient = async (data: {
     mobile: trimmedMobile,
     normalizedMobile: normMobile,
     email: trimmedEmail,
+    ...(data.allowedQuantity ? { allowedQuantity: data.allowedQuantity } : {}),
     });
 
     return { client: newClient, isNew: true };

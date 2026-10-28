@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "esbuild tests/entry-workbook.test.ts tests/excel-import.test.ts tests/diwali-year.test.ts tests/requestee.test.ts --bundle --platform=node --log-level=warning --outdir=test-results/bundled --out-extension:.js=.cjs && node test-results/bundled/diwali-year.test.cjs && node test-results/bundled/entry-workbook.test.cjs && node test-results/bundled/excel-import.test.cjs && node test-results/bundled/requestee.test.cjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

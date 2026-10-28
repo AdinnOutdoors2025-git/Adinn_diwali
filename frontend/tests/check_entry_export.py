@@ -12,8 +12,8 @@ filename, expected_file = sys.argv[1:3]
 with open(expected_file, encoding='utf-8') as stream:
     expected = json.load(stream)
 workbook = openpyxl.load_workbook(filename)
-assert workbook.sheetnames == ['Summary', 'Distribution Details', 'Vertical Analytics', 'BD Analytics']
-summary, details, vertical, bd_sheet = [workbook[name] for name in workbook.sheetnames]
+assert workbook.sheetnames == ['Summary', 'Distribution Details', 'Type Analytics', 'Requestee Analytics']
+summary, details, type_sheet, bd_sheet = [workbook[name] for name in workbook.sheetnames]
 navy, orange, ivory, white, green, rose = 'FF14213D', 'FFF59E0B', 'FFFFFBEB', 'FFFFFFFF', 'FF059669', 'FFE11D48'
 assert summary['A1'].value == 'ADINN | Diwali Sweet Distribution Report'
 assert summary['A1'].fill.fgColor.rgb == navy
@@ -21,7 +21,7 @@ assert summary['A1'].font.color.rgb == white and summary['A1'].font.bold
 assert summary.freeze_panes == 'A8'
 assert 'A1:L2' in [str(value) for value in summary.merged_cells]
 assert summary['B3'].value == expected['filters']['year']
-assert summary['B4'].value == ('All Verticals' if expected['filters']['vertical'] == 'ALL' else expected['filters']['vertical'])
+assert summary['B4'].value == ('All Types' if expected['filters']['type'] == 'ALL' else expected['filters']['type'])
 assert summary['B5'].value == (expected['filters']['search'] or 'All clients')
 assert summary['B6'].value == {'ALL': 'All', 'GIVEN': 'Given', 'NOT_GIVEN': 'Not Given'}[expected['filters']['status']]
 assert summary['A8'].font.color.rgb == navy
@@ -48,7 +48,7 @@ for index, wanted in enumerate(expected['rows'], start=2):
     assert details.cell(index, 2).fill.fgColor.rgb == (white if index % 2 == 0 else ivory)
     assert details.row_dimensions[index].height >= 32
 
-for sheet in [details, vertical, bd_sheet]:
+for sheet in [details, type_sheet, bd_sheet]:
     assert sheet.freeze_panes == 'A2'
     assert sheet.auto_filter.ref is not None
     for cell in sheet[1]:
@@ -63,16 +63,16 @@ for sheet in [details, vertical, bd_sheet]:
 for sheet in workbook:
     assert not any(cell.value == 'Distribution Date (IST)' for row in sheet for cell in row)
 
-for row in range(2, vertical.max_row + 1):
-    values = [cell.value for cell in vertical[row]]
+for row in range(2, type_sheet.max_row + 1):
+    values = [cell.value for cell in type_sheet[row]]
     name = values[0]
-    members = [record for record in records if any(link['vertical'] == name for link in record['associations'])]
+    members = [record for record in records if any(link['type'] == name for link in record['associations'])]
     given_here = sum(not record['isEligible'] for record in members)
-    credited = sum(record['currentYearDistribution'] is not None and record['currentYearDistribution']['vertical'] == name for record in records)
+    credited = sum(record['currentYearDistribution'] is not None and record['currentYearDistribution']['type'] == name for record in records)
     assert values[:4] == [name, len(members), given_here, len(members) - given_here]
     assert math.isclose(values[4], percent(given_here, len(members)), abs_tol=1e-10)
     assert values[5] == credited
-    assert vertical.cell(row, 5).number_format == '0.00%'
+    assert type_sheet.cell(row, 5).number_format == '0.00%'
 
 assert bd_sheet.max_row == len(bds) + 1
 assert [(bd_sheet.cell(row, 1).value, bd_sheet.cell(row, 2).value) for row in range(2, bd_sheet.max_row + 1)] == [(bd['name'], bd['email']) for bd in bds]

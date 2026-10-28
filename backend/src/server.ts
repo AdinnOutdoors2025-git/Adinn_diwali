@@ -4,6 +4,7 @@ dotenv.config();
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { connectDB, isDatabaseConnected } from './config/db.js';
+import { assertJwtConfig } from './config/jwt.js';
 import { requireDatabase } from './middleware/dbReady.js';
 import authRoutes from './routes/authRoutes.js';
 import bdRoutes from './routes/bdRoutes.js';
@@ -12,6 +13,7 @@ import distributionRoutes from './routes/distributionRoutes.js';
 import { seedInitialData } from './utils/seedData.js';
 import { ensureDistributionIndexes } from './models/SweetDistribution.js';
 import { ensureClientIndexes } from './models/Client.js';
+import { ensureAssociationIndexes } from './models/ClientAssociation.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -60,8 +62,10 @@ app.use((err: any, req: Request, res: Response, next: any) => {
 // Start Server
 const startServer = async () => {
   try {
+    assertJwtConfig();
     await connectDB();
     await ensureClientIndexes();
+    await ensureAssociationIndexes();
     await ensureDistributionIndexes();
     await seedInitialData();
 

@@ -64,7 +64,7 @@ export const CMDDashboard: React.FC = () => {
           <div className="mt-6 p-4 rounded-xl bg-slate-900/60 border border-slate-700/60 text-xs text-slate-400 space-y-2">
             <div className="font-semibold text-slate-200">Upcoming Executive Features:</div>
             <ul className="list-disc list-inside space-y-1 text-slate-400">
-              <li>Comprehensive distribution review across all 10 business verticals.</li>
+              <li>Comprehensive distribution review across all client types.</li>
               <li>Consolidated sweet box procurement & VIP client dispatch sign-off.</li>
               <li>Real-time vendor distribution expenditure and courier status audits.</li>
             </ul>

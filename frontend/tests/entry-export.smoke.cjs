@@ -10,7 +10,7 @@ const XLSX = require('../../backend/node_modules/xlsx');
 const base = process.env.AUTH_TEST_BASE_URL || 'http://127.0.0.1:5173';
 const output = path.resolve(__dirname, '../test-results');
 const prefix = `Entry Export Check ${Date.now()}`;
-const headings = ['S.No.', 'Client/Vendor Name', 'Phone Number', 'Email', 'Vertical', 'BD', 'BD Email', 'Created At (IST)', 'Distribution Year', 'Distribution Status', 'Distribution Marked', 'Last Given Year'];
+const headings = ['S.No.', 'Client/Vendor Name', 'Phone Number', 'Email', 'Type', 'Requestee Name', 'Requestee Email', 'Created At (IST)', 'Distribution Year', 'Allowed Quantity', 'Distribution Quantity', 'Mode', 'Status', 'Distribution Status', 'Distribution Marked', 'Last Given Year'];
 const hash = rows => crypto.createHash('sha256').update(JSON.stringify(rows)).digest('hex');
 
 async function main() {
@@ -51,12 +51,12 @@ async function main() {
       while (existingPhones.has(String(phone))) phone++;
       return { name: `${prefix} ${String(index).padStart(3, '0')}`, mobile: String(phone++), email: index === 0 ? 'entry-export@example.com' : '' };
     });
-    const imported = await call('/clients/bulk-import', 'POST', { vertical: 'Roadshow', bd: bds[0]._id, records });
+    const imported = await call('/clients/bulk-import', 'POST', { type: 'Govt. Official', bd: bds[0]._id, records });
     assert.equal(imported.summary.successful, 101);
     const first = await db.collection('clients').findOne({ normalizedName: records[0].name.toLowerCase() });
-    const linked = await call('/clients', 'POST', { ...records[0], vertical: 'Outdoor', bd: bds[1]._id });
+    const linked = await call('/clients', 'POST', { ...records[0], type: 'Vendor', bd: bds[1]._id });
     assert.equal(linked.data.clientId, String(first._id));
-    for (const year of [2026, 2027]) await call('/distributions', 'POST', { clientId: String(first._id), year, vertical: 'Roadshow', bd: bds[0]._id });
+    for (const year of [2026, 2027]) await call('/distributions', 'POST', { clientId: String(first._id), year, type: 'Govt. Official', bd: bds[0]._id, quantity: 1, mode: 'IN_PERSON' });
     const phase = await snapshot();
 
     await page.goto(`${base}/staff/reports`);
@@ -75,7 +75,7 @@ async function main() {
     assert.equal((await fetch(`${base}/api/reports`, { headers: { Authorization: `Bearer ${token}` } })).status, 404);
     pass('Analytics page/sidebar/API are removed; old report bookmarks redirect to Entry');
     const search = page.getByRole('searchbox', { name: 'Global master search', exact: true });
-    const uiFilters = { year: 2026, vertical: 'ALL', bd: 'ALL', status: 'ALL', search: '' };
+    const uiFilters = { year: 2026, type: 'ALL', bd: 'ALL', status: 'ALL', search: '' };
     const expected = async filters => {
       let rows = [], pageNumber = 1, pages = 1;
       do {
@@ -83,7 +83,7 @@ async function main() {
         rows.push(...result.data); pages = result.pagination.totalPages; pageNumber++;
       } while (pageNumber <= pages);
       const date = value => value ? new Date(value).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '';
-      return { records: rows, rows: rows.map((row, index) => [index + 1, row.clientName, row.clientMobile, row.clientEmail || '', row.associations.map(link => link.vertical).join('\n'), row.associations.map(link => link.bd?.name || '').join('\n'), row.associations.map(link => link.bd?.email || '').join('\n'), date(row.createdAt), Number(filters.year), row.isEligible ? 'Not Given' : 'Given', date(row.currentYearDistribution?.distributedAt), row.lastGiven ?? '']) };
+      return { records: rows, rows: rows.map((row, index) => [index + 1, row.clientName, row.clientMobile, row.clientEmail || '', row.associations.map(link => link.type ?? 'Unassigned').join('\n'), row.associations.map(link => link.bd?.name || '').join('\n'), row.associations.map(link => link.bd?.email || '').join('\n'), date(row.createdAt), Number(filters.year), row.allowedQuantity ?? 1, row.currentYearDistribution?.quantity ?? '', row.currentYearDistribution?.mode ? { COURIER: 'Courier', IN_PERSON: 'In-person' }[row.currentYearDistribution.mode] : '', row.currentYearDistribution?.status ? row.currentYearDistribution.status[0] + row.currentYearDistribution.status.slice(1).toLowerCase() : '', row.isEligible ? 'Not Given' : 'Given', date(row.currentYearDistribution?.distributedAt), row.lastGiven ?? '']) };
     };
     let downloads = 0;
     page.on('download', () => downloads++);
@@ -91,7 +91,7 @@ async function main() {
       uiFilters[key] = value;
       const response = page.waitForResponse(res => new URL(res.url()).pathname === '/api/distributions' && Object.entries(uiFilters).every(([key, value]) => (new URL(res.url()).searchParams.get(key) || (key === 'search' ? '' : 'ALL')) === String(value)));
       if (key === 'search') await search.fill(value);
-      else await page.getByRole('combobox', { name: { year: 'Year', vertical: 'Vertical', bd: 'BD', status: 'Distribution Status' }[key], exact: true }).selectOption(String(value));
+      else await page.getByRole('combobox', { name: { year: 'Year', type: 'Type', bd: 'Requestee Name', status: 'Distribution Status' }[key], exact: true }).selectOption(String(value));
       await response;
       await page.waitForFunction(() => { const button = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Export Excel'); return button && !button.disabled; });
     };
@@ -116,7 +116,7 @@ async function main() {
     await exportCase('filtered', 1);
     await change('year', 2027); await exportCase('year', 1);
     await change('search', `${prefix} no matches`); await exportCase('empty', 0);
-    pass('Search, Vertical, BD, year and status filters affect all exported values; empty results retain the themed sheets and valid zero-data charts');
+    pass('Search, Type, Requestee, year and status filters affect all exported values; empty results retain the themed sheets and valid zero-data charts');
     await page.route('**/api/distributions?**', route => new URL(route.request().url()).searchParams.get('limit') === '100' ? route.abort('connectionrefused') : route.continue());
     await button.click(); await page.getByRole('alert').filter({ hasText: 'Unable to export Excel' }).waitFor();
     assert.equal(downloads, 4); await page.unroute('**/api/distributions?**');

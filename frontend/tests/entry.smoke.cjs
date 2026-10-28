@@ -59,7 +59,7 @@ async function main() {
     await search.waitFor();
     const table = page.getByRole('table', { name: 'Client/vendor distribution', exact: true });
     assert.equal(await page.getByRole('tab').count(), 0);
-    assert.deepEqual(await table.locator('thead th').allTextContents(), ['S.No.', 'Client/Vendor Name', 'Phone Number', 'Email', 'Vertical', 'BD', 'BD Email', 'Created At', 'Last Given', 'Action']);
+    assert.deepEqual(await table.locator('thead th').allTextContents(), ['S.No.', 'Client/Vendor Name', 'Phone Number', 'Email', 'Type', 'Requestee Name', 'Requestee Email', 'Quantity', 'Created At', 'Last Given', 'Mode', 'Status', 'Action']);
     const add = page.getByRole('button', { name: 'Add Client/Vendor', exact: true });
     await add.click(); await add.click();
     const drafts = table.locator('[data-draft-row]');
@@ -67,11 +67,11 @@ async function main() {
     assert.equal(await page.getByRole('heading', { name: 'Add Client / Vendor', exact: true }).count(), 0);
     await drafts.nth(0).getByRole('button', { name: 'Save', exact: true }).click();
     await drafts.nth(0).getByRole('alert').waitFor();
-    const fill = async (row, name, phone, email, vertical, bd) => {
+    const fill = async (row, name, phone, email, type, bd) => {
       await row.getByRole('textbox', { name: 'Client/Vendor Name', exact: true }).fill(name);
       await row.getByRole('textbox', { name: 'Phone Number', exact: true }).fill(phone);
       await row.getByRole('textbox', { name: 'Email ID (Optional)', exact: true }).fill(email);
-      await row.getByRole('combobox', { name: 'Client Vertical', exact: true }).selectOption(vertical);
+      await row.getByRole('combobox', { name: 'Client Type', exact: true }).selectOption(type);
       await row.getByRole('combobox', { name: 'Client BD', exact: true }).selectOption(bd);
     };
     const aPhone = mobile(1), bPhone = mobile(2), cPhone = mobile(3), dPhone = mobile(4);
@@ -98,12 +98,12 @@ async function main() {
     await drafts.nth(0).getByRole('alert').waitFor();
     await drafts.nth(0).getByRole('button', { name: 'Cancel', exact: true }).click();
     await rowA.getByRole('button', { name: 'Link association', exact: true }).click();
-    await drafts.nth(0).getByRole('combobox', { name: 'Client Vertical', exact: true }).selectOption('Outdoor');
+    await drafts.nth(0).getByRole('combobox', { name: 'Client Type', exact: true }).selectOption('Outdoor');
     await drafts.nth(0).getByRole('combobox', { name: 'Client BD', exact: true }).selectOption(bds[1]._id);
     const linked = await save(drafts.nth(0)); assert.equal(linked.clientId, a.clientId);
     const all = await query({ search: prefix });
     assert.equal(all.pagination.total, 2); assert.equal(all.data.find(row => row.clientId === a.clientId).associations.length, 2);
-    pass('Normalized duplicates are blocked and new Vertical/BD associations reuse the same master identity');
+    pass('Normalized duplicates are blocked and new Type/Requestee associations reuse the same master identity');
 
     for (const value of [fixture('A'), aPhone, 'entry-a@example.com', bds[0].name, bds[0].email]) {
       const result = await query({ search: value });
@@ -125,20 +125,20 @@ async function main() {
     assert.equal(record.clientEmail, 'entry-a@example.com');
     pass('Created At is the client master timestamp; optional values and Last Given reflect real stored data');
 
-    const orphan = await call('/clients', 'POST', { name: fixture('Unlinked'), mobile: cPhone, vertical: 'Roadshow', bd: bds[0]._id });
+    const orphan = await call('/clients', 'POST', { name: fixture('Unlinked'), mobile: cPhone, type: 'Govt. Official', bd: bds[0]._id });
     assert.equal(orphan.status, 201); assert.equal((await call(`/clients/${orphan.data.data._id}`, 'DELETE')).status, 200);
     const orphanRecord = (await query({ search: fixture('Unlinked') })).data[0];
     assert.equal(orphanRecord.associations.length, 0);
     assert.equal((await query({ search: prefix })).pagination.total, 3);
-    const phoneSearch = await query({ search: aPhone, vertical: 'Roadshow', bd: bds[0]._id, status: 'NOT_GIVEN' });
+    const phoneSearch = await query({ search: aPhone, type: 'Govt. Official', bd: bds[0]._id, status: 'NOT_GIVEN' });
     assert.equal(phoneSearch.pagination.total, 1);
-    assert.equal((await query({ search: bds[1].email, vertical: 'Roadshow', bd: bds[0]._id })).pagination.total, 0);
+    assert.equal((await query({ search: bds[1].email, type: 'Govt. Official', bd: bds[0]._id })).pagination.total, 0);
     assert.equal((await query({ search: prefix, status: 'GIVEN' })).pagination.total, 0);
     assert.equal((await query({ search: prefix, status: 'NOT_GIVEN' })).pagination.total, 3);
-    await page.getByRole('combobox', { name: 'Vertical', exact: true }).selectOption('Roadshow');
+    await page.getByRole('combobox', { name: 'Type', exact: true }).selectOption('Roadshow');
     await page.getByRole('combobox', { name: 'BD', exact: true }).selectOption(bds[0]._id);
     await rowA.waitFor();
-    pass('Vertical, BD and year-specific status filters combine with search; unlinked clients remain in the default master list');
+    pass('Type, Requestee and year-specific status filters combine with search; unlinked clients remain in the default master list');
 
     await page.getByRole('button', { name: 'Excel / BD Tools', exact: true }).click();
     await page.getByRole('button', { name: 'Add BD', exact: true }).click();
@@ -172,9 +172,9 @@ async function main() {
     const givenResponse = await givenPromise; assert.equal(givenResponse.status(), 201);
     const givenID = (await givenResponse.json()).data._id;
     await rowA.getByText(`Given in ${year}`, { exact: true }).waitFor();
-    const duplicate = await call('/distributions', 'POST', { clientId: a.clientId, year, vertical: 'Outdoor', bd: bds[1]._id });
+    const duplicate = await call('/distributions', 'POST', { clientId: a.clientId, year, type: 'Vendor', bd: bds[1]._id, quantity: 1, mode: 'IN_PERSON' });
     assert.equal(duplicate.status, 409);
-    const nextYear = await call('/distributions', 'POST', { clientId: a.clientId, year: year + 1, vertical: 'Outdoor', bd: bds[1]._id });
+    const nextYear = await call('/distributions', 'POST', { clientId: a.clientId, year: year + 1, type: 'Vendor', bd: bds[1]._id, quantity: 1, mode: 'IN_PERSON' });
     assert.equal(nextYear.status, 201);
     const nextID = nextYear.data.data._id;
     assert.equal((await query({ search: prefix, status: 'GIVEN' })).pagination.total, 1);
@@ -210,12 +210,12 @@ async function main() {
     assert.ok(await db.collection('clients').findOne({ _id: new ObjectId(a.clientId) }));
     assert.equal((await call(`/distributions/${givenID}/revert`, 'POST', { reason: 'Repeated reversal rejected' })).status, 404);
     assert.equal((await query({ search: fixture('A'), status: 'NOT_GIVEN' })).pagination.total, 1);
-    assert.equal((await call('/distributions', 'POST', { clientId: a.clientId, year, vertical: 'Outdoor', bd: bds[1]._id })).status, 201);
+    assert.equal((await call('/distributions', 'POST', { clientId: a.clientId, year, type: 'Vendor', bd: bds[1]._id, quantity: 1, mode: 'IN_PERSON' })).status, 201);
     pass('Confirmed Revert requires authentication/reason, preserves record/notes/actor, affects only the selected record and restores annual eligibility');
 
     const concurrent = await Promise.all([
-      call('/distributions', 'POST', { clientId: a.clientId, year: year + 2, vertical: 'Roadshow', bd: bds[0]._id }),
-      call('/distributions', 'POST', { clientId: a.clientId, year: year + 2, vertical: 'Outdoor', bd: bds[1]._id }),
+      call('/distributions', 'POST', { clientId: a.clientId, year: year + 2, type: 'Govt. Official', bd: bds[0]._id, quantity: 1, mode: 'IN_PERSON' }),
+      call('/distributions', 'POST', { clientId: a.clientId, year: year + 2, type: 'Vendor', bd: bds[1]._id, quantity: 1, mode: 'IN_PERSON' }),
     ]);
     assert.deepEqual(concurrent.map(result => result.status).sort(), [201, 409]);
     const indexes = await db.collection('sweetdistributions').indexes();
@@ -225,16 +225,16 @@ async function main() {
     pass('Backend and MongoDB both reject concurrent/duplicate active client-year records while retaining reverted history');
 
     const concurrentIdentity = await Promise.all([
-      call('/clients', 'POST', { name: fixture('Concurrent'), mobile: mobile(5), vertical: 'Roadshow', bd: bds[0]._id }),
-      call('/clients', 'POST', { name: fixture('Concurrent'), mobile: mobile(5), vertical: 'Outdoor', bd: bds[1]._id }),
+      call('/clients', 'POST', { name: fixture('Concurrent'), mobile: mobile(5), type: 'Govt. Official', bd: bds[0]._id }),
+      call('/clients', 'POST', { name: fixture('Concurrent'), mobile: mobile(5), type: 'Vendor', bd: bds[1]._id }),
     ]);
     assert.deepEqual(concurrentIdentity.map(result => result.status), [201, 201]);
     assert.equal(concurrentIdentity[0].data.data.clientId, concurrentIdentity[1].data.data.clientId);
     assert.equal(await db.collection('clients').countDocuments({ normalizedName: normalize(fixture('Concurrent')) }), 1);
-    assert.equal((await call('/clients', 'POST', { name: fixture('Invalid Phone'), mobile: 'abc123', vertical: 'Roadshow', bd: bds[0]._id })).status, 400);
+    assert.equal((await call('/clients', 'POST', { name: fixture('Invalid Phone'), mobile: 'abc123', type: 'Govt. Official', bd: bds[0]._id })).status, 400);
     pass('Concurrent client registrations reuse one MongoDB identity; invalid phones are rejected by the backend');
 
-    await page.getByRole('combobox', { name: 'Vertical', exact: true }).selectOption('ALL');
+    await page.getByRole('combobox', { name: 'Type', exact: true }).selectOption('ALL');
     await page.getByRole('combobox', { name: 'BD', exact: true }).selectOption('ALL');
     const freshResponse = page.waitForResponse(response => response.url().includes('/api/distributions?'));
     await page.getByRole('button', { name: 'Refresh', exact: true }).click(); await freshResponse;

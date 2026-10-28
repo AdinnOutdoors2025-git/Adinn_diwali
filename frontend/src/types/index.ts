@@ -1,3 +1,5 @@
+import type { ClientType, DistributionMode, DeliveryStatus } from '../config/distribution';
+
 export type UserRole = 'STAFF' | 'CMD';
 
 export interface User {
@@ -15,20 +17,8 @@ export interface BD {
   updatedAt?: string;
 }
 
-export const VERTICAL_OPTIONS = [
-  'Roadshow',
-  'Outdoor',
-  'Signage',
-  'Media & Arts',
-  'POPs & Offsets',
-  'Fixtures',
-  'Events & Activation',
-  'Digital Marketing',
-  'Software Development',
-  'Wall Painting',
-] as const;
-
-export type VerticalType = typeof VERTICAL_OPTIONS[number];
+export { TYPE_OPTIONS } from '../config/distribution';
+export type { ClientType, DistributionMode, DeliveryStatus } from '../config/distribution';
 
 export interface ClientRecord {
   _id: string;
@@ -37,7 +27,8 @@ export interface ClientRecord {
   name: string;
   mobile: string;
   email?: string;
-  vertical: VerticalType;
+  allowedQuantity: number;
+  type: ClientType | null;
   bd: BD | string;
   createdAt?: string;
   updatedAt?: string;
@@ -50,9 +41,10 @@ export interface DistributionRow {
   clientName: string;
   clientMobile: string;
   clientEmail: string;
-  vertical: VerticalType | null;
+  allowedQuantity: number;
+  type: ClientType | null;
   bd: BD | null;
-  associations: { _id: string; vertical: VerticalType; bd: BD | null }[];
+  associations: { _id: string; type: ClientType | null; legacyVertical: string | null; bd: BD | null }[];
   createdAt: string;
   lastGiven: number | null;
   lastGivenDate: string | null;
@@ -61,7 +53,14 @@ export interface DistributionRow {
   currentYearDistribution: {
     _id: string;
     distributionYear: number;
-    vertical: string;
+    type: ClientType | null;
+    legacyVertical: string | null;
+    quantity: number | null;
+    mode: DistributionMode | null;
+    status: DeliveryStatus | null;
+    statusHistory: { status: DeliveryStatus; at: string }[];
+    hasProof: boolean;
+    deliveredAt: string | null;
     bdId: string | null;
     bdName: string;
     bdEmail: string;

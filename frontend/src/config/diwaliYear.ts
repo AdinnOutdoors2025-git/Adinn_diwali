@@ -4,9 +4,10 @@
 // - Operating year: the year selected by default. It rolls over on ROLLOVER (MM-DD, default 01-01).
 //   Diwali itself falls in Oct/Nov and moves every year, so the real activation date is a business
 //   decision: set VITE_DIWALI_ROLLOVER (e.g. "08-01") or pin VITE_DIWALI_OPERATING_YEAR to change it.
-// - Selector years run from FIRST_DIWALI_YEAR to operating year + YEARS_AHEAD, so future years appear automatically.
+// - Selector years run from FIRST_DIWALI_YEAR up to the operating year (the real calendar year by default). Future years
+//   are not selectable; each new year appears by itself when the calendar reaches it.
 export const FIRST_DIWALI_YEAR = 2026;
-export const YEARS_AHEAD = 3;
+export const YEARS_AHEAD = 0;
 
 export interface YearPolicyInput { now?: Date; firstYear?: number; yearsAhead?: number; rollover?: string; operatingYear?: number }
 
