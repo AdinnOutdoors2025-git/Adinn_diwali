@@ -9,7 +9,7 @@ import { BD } from '../models/BD.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { FIRST_DIWALI_YEAR, isRecordableYear } from '../config/diwaliYear.js';
 import {
-  DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, DISTRIBUTION_QUANTITY,
+  DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, DISTRIBUTION_QUANTITY, quantityState,
 } from '../config/distribution.js';
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -74,7 +74,7 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
         lastGivenDate: distributions[0]?.distributedAt || null,
         isEligible: !given, selectedYear: currentYear,
         currentYearDistribution: given ? { _id: given._id, distributionYear: given.distributionYear, type: given.type || null,
-          legacyVertical: given.vertical || null, quantity: given.quantity ?? null, mode: given.mode || null, status: given.status || null,
+          legacyVertical: given.vertical || null, quantity: given.quantity ?? null, mode: given.mode || null, status: given.status || null, quantityState: quantityState(given.status),
           statusHistory: (given.statusHistory || []).map(entry => ({ status: entry.status, at: entry.at })),
           hasProof: !!given.proof, deliveredAt: given.deliveredAt || null,
           bdId: (given.bd as any)?._id?.toString() || null, bdName: (given.bd as any)?.name || '', bdEmail: (given.bd as any)?.email || '',

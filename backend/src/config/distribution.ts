@@ -25,3 +25,9 @@ export const nextStatus = (mode: DistributionMode, current: DeliveryStatus): Del
 export const DISTRIBUTION_QUANTITY = 5;
 export const MAX_PROOF_BYTES = (Number(process.env.MAX_PROOF_MB) || 5) * 1024 * 1024;
 
+
+// Quantity accounting: a saved distribution is IN_PROGRESS until its status is DELIVERED, then it is GIVEN.
+// Legacy records with no status workflow predate tracking and keep the original business logic: they count as GIVEN.
+export type QuantityState = 'GIVEN' | 'IN_PROGRESS';
+export const quantityState = (status?: DeliveryStatus | null): QuantityState =>
+  !status || status === 'DELIVERED' ? 'GIVEN' : 'IN_PROGRESS';

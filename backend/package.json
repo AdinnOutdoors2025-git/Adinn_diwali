@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "seed": "tsx src/utils/seedData.ts",
     "clean:bds": "tsx src/utils/cleanDemoBDs.ts",
-    "test": "tsx tests/duplicate-client.test.ts && tsx tests/yearly-cycle.test.ts && tsx tests/delivery-workflow.test.ts && tsx tests/jwt-config.test.ts"
+    "test": "tsx tests/duplicate-client.test.ts && tsx tests/yearly-cycle.test.ts && tsx tests/delivery-workflow.test.ts && tsx tests/jwt-config.test.ts && tsx tests/quantity-state.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

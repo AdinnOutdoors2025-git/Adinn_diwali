@@ -56,6 +56,7 @@ export interface DistributionRow {
     quantity: number | null;
     mode: DistributionMode | null;
     status: DeliveryStatus | null;
+    quantityState?: 'GIVEN' | 'IN_PROGRESS';
     statusHistory: { status: DeliveryStatus; at: string }[];
     hasProof: boolean;
     deliveredAt: string | null;
