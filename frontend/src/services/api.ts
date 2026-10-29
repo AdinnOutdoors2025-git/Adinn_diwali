@@ -1,4 +1,4 @@
-import { BD, ClientRecord, DistributionRow, User } from '../types';
+import { BD, ClientRecord, DistributionRow, Occasion, User } from '../types';
 import type { ClientType, DeliveryStatus, DistributionMode } from '../config/distribution';
 
 const API_BASE_URL = '/api';
@@ -101,6 +101,16 @@ export const api = {
     return handleResponse<{ success: boolean; count: number; data: BD[] }>(res);
   },
 
+  async getOccasions() {
+    const res = await fetch(`${API_BASE_URL}/occasions`, { headers: getAuthHeaders() });
+    return handleResponse<{ success: boolean; count: number; data: Occasion[] }>(res);
+  },
+
+  async createOccasion(name: string) {
+    const res = await fetch(`${API_BASE_URL}/occasions`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ name }) });
+    return handleResponse<{ success: boolean; message: string; data: Occasion }>(res);
+  },
+
   async createBD(name: string, email: string) {
     const res = await fetch(`${API_BASE_URL}/bds`, {
       method: 'POST',
@@ -198,6 +208,7 @@ export const api = {
   // Distributions (Entry Page: Annual Sweet Distribution Tracking)
   async getDistributions(params: {
     year: number;
+    occasion?: string;
     type?: string;
     bd?: string;
     search?: string;
@@ -214,6 +225,7 @@ export const api = {
       status: params.status || 'ALL',
     });
 
+    if (params.occasion) query.append('occasion', params.occasion);
     if (params.type && params.type !== 'ALL') {
       query.append('type', params.type);
     }
@@ -250,6 +262,8 @@ export const api = {
     type: ClientType;
     bd: string;
     mode: DistributionMode;
+    occasion?: string;
+    address?: string;
     notes?: string;
   }) {
     const res = await fetch(`${API_BASE_URL}/distributions`, {
@@ -279,6 +293,13 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/distributions/${id}/proof`, { headers: getAuthHeaders() });
     if (!res.ok) throw new ApiError(res.status === 404 ? 'No delivery proof on file.' : 'Unable to load delivery proof.');
     return res.blob();
+  },
+
+  // Short-lived signed link straight to the private Space. `url` is null for legacy proofs stored in MongoDB.
+  async getDeliveryProofLink(id: string): Promise<{ source: 'SPACES' | 'MONGODB'; url: string | null }> {
+    const res = await fetch(`${API_BASE_URL}/distributions/${id}/proof-url`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new ApiError(res.status === 404 ? 'No delivery proof on file.' : 'Unable to load delivery proof.');
+    return (await res.json()).data;
   },
 
   async revertDistribution(id: string, reason: string) {

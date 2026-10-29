@@ -10,6 +10,8 @@ import authRoutes from './routes/authRoutes.js';
 import bdRoutes from './routes/bdRoutes.js';
 import clientRoutes from './routes/clientRoutes.js';
 import distributionRoutes from './routes/distributionRoutes.js';
+import occasionRoutes from './routes/occasionRoutes.js';
+import { ensureOccasions } from './models/Occasion.js';
 import { seedInitialData } from './utils/seedData.js';
 import { ensureDistributionIndexes } from './models/SweetDistribution.js';
 import { ensureClientIndexes } from './models/Client.js';
@@ -49,6 +51,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/bds', bdRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/distributions', distributionRoutes);
+app.use('/api/occasions', occasionRoutes);
 
 // Global Error Handler
 app.use((err: any, req: Request, res: Response, next: any) => {
@@ -66,6 +69,7 @@ const startServer = async () => {
     await connectDB();
     await ensureClientIndexes();
     await ensureAssociationIndexes();
+    await ensureOccasions();
     await ensureDistributionIndexes();
     await seedInitialData();
 

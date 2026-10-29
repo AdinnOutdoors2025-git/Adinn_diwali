@@ -33,6 +33,22 @@ export interface ClientRecord {
   updatedAt?: string;
 }
 
+export interface Occasion {
+  _id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+export interface RevertEntry {
+  _id: string;
+  revertedAt: string | null;
+  reason: string | null;
+  distributedAt: string | null;
+  mode: DistributionMode | null;
+  status: DeliveryStatus | null;
+  quantity: number | null;
+}
+
 export interface DistributionRow {
   _id: string;
   associationId: string | null;
@@ -44,6 +60,8 @@ export interface DistributionRow {
   bd: BD | null;
   associations: { _id: string; type: ClientType | null; legacyVertical: string | null; bd: BD | null }[];
   createdAt: string;
+  /** Earlier distributions to this client for the selected occasion and year that were reverted, newest revert first. */
+  revertHistory?: RevertEntry[];
   lastGiven: number | null;
   lastGivenDate: string | null;
   isEligible: boolean;
@@ -57,6 +75,8 @@ export interface DistributionRow {
     mode: DistributionMode | null;
     status: DeliveryStatus | null;
     quantityState?: 'GIVEN' | 'IN_PROGRESS';
+    occasion?: string;
+    address?: string | null;
     statusHistory: { status: DeliveryStatus; at: string }[];
     hasProof: boolean;
     deliveredAt: string | null;

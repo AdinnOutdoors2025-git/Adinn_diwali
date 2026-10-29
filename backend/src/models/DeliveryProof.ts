@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-// New proofs are stored in a private DigitalOcean Space: only the object key and metadata are kept here.
+// New proofs are stored in a DigitalOcean Space (public-read objects): only the object key and metadata are kept here.
 // Legacy proofs (no storageKey) still hold their image bytes in `data` and stay readable.
 // Reads go through an authenticated API route only.
 export interface IDeliveryProof extends Document {

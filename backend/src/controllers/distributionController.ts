@@ -6,18 +6,20 @@ import { DeliveryProof } from '../models/DeliveryProof.js';
 import { ClientAssociation } from '../models/ClientAssociation.js';
 import { Client } from '../models/Client.js';
 import { BD } from '../models/BD.js';
+import { findOccasionName } from '../models/Occasion.js';
+import { LEGACY_OCCASION, occasionMatch } from '../config/occasions.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { getProofStorage } from '../config/proofStorage.js';
 import { FIRST_DIWALI_YEAR, isRecordableYear } from '../config/diwaliYear.js';
 import {
-  DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, DISTRIBUTION_QUANTITY, quantityState,
+  DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, DISTRIBUTION_QUANTITY, quantityState, MIN_ADDRESS_LENGTH, MAX_ADDRESS_LENGTH,
 } from '../config/distribution.js';
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export const getDistributionRecords = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { year, type, bd, search, status = 'ALL', mode = 'ALL', deliveryStatus = 'ALL', page = '1', limit = '10' } = req.query;
+    const { year, type, bd, search, status = 'ALL', mode = 'ALL', deliveryStatus = 'ALL', page = '1', limit = '10', occasion: occasionParam } = req.query;
     const currentYear = Number(year || new Date().getFullYear());
     const modeFilter = String(mode), deliveryFilter = String(deliveryStatus);
     // A delivery stage only has meaning within one workflow, so it requires a mode that actually has that stage.
@@ -30,6 +32,9 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
         (bd && bd !== 'ALL' && !mongoose.Types.ObjectId.isValid(String(bd)))) {
       res.status(400).json({ success: false, message: 'Invalid distribution filters' }); return;
     }
+    // No occasion means Diwali (the original behaviour); an unknown one is rejected rather than silently showing nothing.
+    const occasion = occasionParam ? await findOccasionName(occasionParam) : LEGACY_OCCASION;
+    if (!occasion) { res.status(400).json({ success: false, message: 'Unknown occasion' }); return; }
     const associationQuery: any = {};
     if (type && type !== 'ALL') associationQuery.type = type;
     if (bd && bd !== 'ALL') associationQuery.bd = new mongoose.Types.ObjectId(String(bd));
@@ -43,11 +48,11 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
       query.$or = [{ name: regex }, { mobile: regex }, { normalizedMobile: regex }, { email: regex }, { _id: { $in: bdMatches.map(row => row.client) } }];
     }
     if (status !== 'ALL') {
-      const givenIDs = await SweetDistribution.distinct('client', { distributionYear: currentYear, isReverted: { $ne: true } });
+      const givenIDs = await SweetDistribution.distinct('client', { distributionYear: currentYear, occasion: occasionMatch(occasion), isReverted: { $ne: true } });
       conditions.push({ _id: status === 'GIVEN' ? { $in: givenIDs } : { $nin: givenIDs } });
     }
     if (modeFilter !== 'ALL' || deliveryFilter !== 'ALL') {
-      const workflow: any = { distributionYear: currentYear, isReverted: { $ne: true } };
+      const workflow: any = { distributionYear: currentYear, occasion: occasionMatch(occasion), isReverted: { $ne: true } };
       if (modeFilter !== 'ALL') workflow.mode = modeFilter;
       if (deliveryFilter !== 'ALL') workflow.status = deliveryFilter;
       conditions.push({ _id: { $in: await SweetDistribution.distinct('client', workflow) } });
@@ -59,8 +64,12 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
       Client.countDocuments(query),
       Client.find(query).sort({ createdAt: -1, _id: -1 }).skip((pageNum - 1) * limitNum).limit(limitNum).lean(),
     ]);
-    const history = await SweetDistribution.find({ client: { $in: clients.map(client => client._id) }, isReverted: { $ne: true } })
+    const history = await SweetDistribution.find({ client: { $in: clients.map(client => client._id) }, occasion: occasionMatch(occasion), isReverted: { $ne: true } })
       .populate('bd', 'name email').sort({ distributionYear: -1, distributedAt: -1 }).lean();
+    // Reverted records stay in the collection (a revert never deletes), so a client reverted several times has one entry per revert.
+    // Entries are scoped to the selected occasion and year; the timestamp and reason were written by the server when the revert succeeded.
+    const reverts = await SweetDistribution.find({ client: { $in: clients.map(client => client._id) }, occasion: occasionMatch(occasion), distributionYear: currentYear, isReverted: true })
+      .select('client revertedAt revertReason distributedAt mode status quantity').sort({ revertedAt: -1, _id: -1 }).lean();
     const data = clients.map(client => {
       const links = associations.filter(row => String(row.client) === String(client._id));
       const distributions = history.filter(row => String(row.client) === String(client._id));
@@ -73,16 +82,19 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
         createdAt: client.createdAt,
         lastGiven: distributions[0]?.distributionYear || null,
         lastGivenDate: distributions[0]?.distributedAt || null,
+        revertHistory: reverts.filter(row => String(row.client) === String(client._id)).map(row => ({
+          _id: row._id, revertedAt: row.revertedAt || null, reason: row.revertReason || null, distributedAt: row.distributedAt || null,
+          mode: row.mode || null, status: row.status || null, quantity: row.quantity ?? null })),
         isEligible: !given, selectedYear: currentYear,
-        currentYearDistribution: given ? { _id: given._id, distributionYear: given.distributionYear, type: given.type || null,
+        currentYearDistribution: given ? { _id: given._id, distributionYear: given.distributionYear, occasion: given.occasion || LEGACY_OCCASION, type: given.type || null,
           legacyVertical: given.vertical || null, quantity: given.quantity ?? null, mode: given.mode || null, status: given.status || null, quantityState: quantityState(given.status),
           statusHistory: (given.statusHistory || []).map(entry => ({ status: entry.status, at: entry.at })),
-          hasProof: !!given.proof, deliveredAt: given.deliveredAt || null,
+          hasProof: !!given.proof, deliveredAt: given.deliveredAt || null, address: given.mode === 'COURIER' ? given.address || null : null,
           bdId: (given.bd as any)?._id?.toString() || null, bdName: (given.bd as any)?.name || '', bdEmail: (given.bd as any)?.email || '',
           distributedAt: given.distributedAt, notes: given.notes || '' } : null,
       };
     });
-    res.status(200).json({ success: true, data, selectedYear: currentYear,
+    res.status(200).json({ success: true, data, selectedYear: currentYear, selectedOccasion: occasion,
       pagination: { total, page: pageNum, limit: limitNum, totalPages: Math.ceil(total / limitNum) || 1 } });
   } catch (error: any) {
     console.error('Error fetching distributions:', error);
@@ -93,6 +105,13 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
 export const createDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { clientId, year, type, bd, notes, mode } = req.body;
+    // No occasion in the request means Diwali, so existing callers keep working. An unknown occasion is rejected.
+    const occasion = req.body.occasion === undefined || req.body.occasion === '' ? LEGACY_OCCASION : await findOccasionName(req.body.occasion);
+    if (!occasion) {
+      res.status(400).json({ success: false, message: 'Select a valid occasion.' });
+      return;
+    }
+    const address = typeof req.body.address === 'string' ? req.body.address.trim().replace(/[ \t]+/g, ' ') : '';
 
     if (!clientId || !mongoose.Types.ObjectId.isValid(clientId)) {
       res.status(400).json({ success: false, message: 'Valid Client ID is required' });
@@ -120,6 +139,12 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
+    // A courier shipment cannot be sent without somewhere to send it. In-person distributions do not carry an address.
+    if (mode === 'COURIER' && (address.length < MIN_ADDRESS_LENGTH || address.length > MAX_ADDRESS_LENGTH)) {
+      res.status(400).json({ success: false, message: `Delivery address is required for Courier (${MIN_ADDRESS_LENGTH} to ${MAX_ADDRESS_LENGTH} characters).` });
+      return;
+    }
+
     const client = await Client.findById(clientId);
     if (!client) {
       res.status(404).json({ success: false, message: 'Client not found' });
@@ -136,6 +161,7 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
     const existingForYear = await SweetDistribution.findOne({
       client: clientId,
       distributionYear,
+      occasion: occasionMatch(occasion),
       isReverted: { $ne: true },
     }).populate('bd', 'name');
 
@@ -149,7 +175,7 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
 
       res.status(409).json({
         success: false,
-        message: `Client "${client.name}" has already received Diwali sweets for ${distributionYear} (recorded under Type "${existingForYear.type || existingForYear.vertical || 'n/a'}" and Requestee "${existingBDName}" on ${formattedDate}). A client can only receive sweets once per year.`,
+        message: `Client "${client.name}" has already received ${occasion} sweets for ${distributionYear} (recorded under Type "${existingForYear.type || existingForYear.vertical || 'n/a'}" and Requestee "${existingBDName}" on ${formattedDate}). A client can only receive sweets once per occasion per year.`,
       });
       return;
     }
@@ -166,10 +192,12 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
     const distribution = await SweetDistribution.create({
       client: clientId,
       distributionYear,
+      occasion,
       type,
       bd,
       quantity: DISTRIBUTION_QUANTITY,
       mode,
+      ...(mode === 'COURIER' ? { address } : {}),
       status: 'INITIATE',
       statusHistory: [{ status: 'INITIATE', at: now, by: userId }],
       distributedBy: userId,
@@ -179,7 +207,7 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
 
     res.status(201).json({
       success: true,
-      message: `Diwali sweets for ${distributionYear} successfully recorded for "${client.name}".`,
+      message: `${occasion} sweets for ${distributionYear} successfully recorded for "${client.name}".`,
       data: distribution,
     });
   } catch (error: any) {
@@ -187,7 +215,7 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
     if (error.code === 11000) {
       res.status(409).json({
         success: false,
-        message: 'This client has already received sweets for the selected year. Duplicate entry blocked by database constraint.',
+        message: 'This client has already received sweets for the selected occasion and year. Duplicate entry blocked by database constraint.',
       });
       return;
     }
@@ -283,6 +311,24 @@ export const updateDeliveryStatus = async (req: AuthRequest, res: Response): Pro
     console.error('Error updating delivery status:', error);
     await discardNewProof();
     res.status(500).json({ success: false, message: 'Unable to update delivery status.' });
+  }
+};
+
+// Authenticated lookup of the direct Space object URL for a proof (derived from the stored key; never stored itself).
+// Legacy MongoDB-binary proofs have no object, so the client falls back to the streaming /proof route.
+export const getDeliveryProofUrl = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) { res.status(400).json({ success: false, message: 'Invalid distribution ID' }); return; }
+    const distribution = await SweetDistribution.findById(id).select('proof').lean();
+    const proof = distribution?.proof ? await DeliveryProof.findById(distribution.proof).select('-data') : null;
+    if (!proof) { res.status(404).json({ success: false, message: 'No delivery proof on file.' }); return; }
+    res.set('Cache-Control', 'private, no-store');
+    if (!proof.storageKey) { res.status(200).json({ success: true, data: { source: 'MONGODB', url: null } }); return; }
+    res.status(200).json({ success: true, data: { source: 'SPACES', url: getProofStorage().publicUrl(proof.storageKey) } });
+  } catch (error) {
+    console.error('Error creating delivery proof URL:', error);
+    res.status(500).json({ success: false, message: 'Unable to prepare the delivery proof link.' });
   }
 };
 

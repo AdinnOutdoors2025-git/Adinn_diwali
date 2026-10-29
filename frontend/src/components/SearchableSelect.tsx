@@ -90,7 +90,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     const rect = triggerRef.current.getBoundingClientRect();
     if (rect.bottom < 0 || rect.top > window.innerHeight) { setIsOpen(false); return; }
     const width = Math.min(Math.max(rect.width, minWidth), window.innerWidth - 16);
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    // Open flush with the trigger's left edge. When a wider list would run off the right of the screen (a trigger near the
+    // right edge), align the right edges instead so it still hangs directly under the trigger, then keep it on screen.
+    const left = Math.max(8, rect.left + width > window.innerWidth - 8 ? Math.min(rect.right - width, window.innerWidth - width - 8) : rect.left);
     const spaceBelow = window.innerHeight - rect.bottom - 12, spaceAbove = rect.top - 12;
     const openUp = spaceBelow < 260 && spaceAbove > spaceBelow;
     setBox(openUp ? { bottom: window.innerHeight - rect.top + 6, left, width, maxHeight: Math.min(400, spaceAbove) }
@@ -252,9 +254,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
           </div>
 
           {searchable && (
-          <div className="px-3 py-1.5 border-t border-slate-100 bg-slate-50/70 text-[11px] text-slate-500 flex items-center justify-between shrink-0" aria-live="polite">
-            <span>{filteredOptions.length} of {options.length}</span>
-            <span className="hidden sm:inline">&uarr;&darr; navigate &middot; Enter select &middot; Esc close</span>
+          <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/70 text-[11px] leading-4 text-slate-500 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 shrink-0" aria-live="polite">
+            <span className="whitespace-nowrap">{filteredOptions.length} of {options.length}</span>
+            <span className="hidden sm:inline whitespace-nowrap">&uarr;&darr; navigate &middot; Enter select &middot; Esc close</span>
           </div>
           )}
         </div>, document.body)}

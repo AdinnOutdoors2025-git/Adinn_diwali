@@ -11,7 +11,7 @@ import clientRoutes from '../src/routes/clientRoutes.js';
 import distributionRoutes from '../src/routes/distributionRoutes.js';
 import { generateToken } from '../src/config/jwt.js';
 import { MAX_PROOF_BYTES } from '../src/config/distribution.js';
-import { missingSpacesEnv, setProofStorage } from '../src/config/proofStorage.js';
+import { missingSpacesEnv, proofPutInput, setProofStorage, spacesObjectUrl } from '../src/config/proofStorage.js';
 import { ensureClientIndexes } from '../src/models/Client.js';
 import { ensureAssociationIndexes } from '../src/models/ClientAssociation.js';
 import { SweetDistribution, ensureDistributionIndexes } from '../src/models/SweetDistribution.js';
@@ -50,7 +50,7 @@ async function main() {
     // A courier distribution already at SHIPPING, ready for Delivered.
     const courier = async () => {
       const c = await call('POST', '/clients', { name: `C${phone}`, mobile: String(++phone), type: 'Vendor', bd: String(bd._id) });
-      const d = await call('POST', '/distributions', { clientId: c.body.data.clientId, year: 2026, type: 'Vendor', bd: String(bd._id), mode: 'COURIER' });
+      const d = await call('POST', '/distributions', { clientId: c.body.data.clientId, year: 2026, type: 'Vendor', bd: String(bd._id), mode: 'COURIER', address: '12 Test Street, Chennai 600001' });
       const id = d.body.data._id as string;
       for (const s of ['DISPATCH', 'SHIPPING']) assert.equal((await setStatus(id, s)).status, 200);
       return id;
@@ -111,6 +111,29 @@ async function main() {
     ok('legacy proofs stored as MongoDB binary stay viewable and untouched');
     const empty = await DeliveryProof.create({ distribution: legacyId, originalName: 'a.jpg', contentType: 'image/jpeg', size: 1, sha256: 'x' }).catch(e => e.name);
     assert.equal(empty, 'ValidationError'); ok('a proof needs either an object key or legacy bytes');
+
+    // ---- Direct Space object URLs ----
+    const link = await fetch(`${base}/distributions/${id}/proof-url`, { headers: auth }); const linkBody = await link.json() as any;
+    assert.equal(link.status, 200); assert.equal(linkBody.data.source, 'SPACES');
+    assert.equal(linkBody.data.url, `https://fake-bucket.fake-region.digitaloceanspaces.com/${proof.storageKey}`);
+    assert.match(linkBody.data.url, /^https:\/\/[^/]+\.digitaloceanspaces\.com\/proofs\/2026\//); assert.ok(!linkBody.data.url.includes('blob:') && !linkBody.data.url.includes('?'));
+    assert.match(link.headers.get('cache-control')!, /no-store/);
+    ok('an authorized user gets the direct Space object URL for a Spaces proof');
+    const stored = JSON.stringify(await DeliveryProof.findOne({ distribution: id }).lean()) + JSON.stringify(await SweetDistribution.findById(id).lean());
+    assert.ok(!stored.includes('https://') && !stored.includes('digitaloceanspaces')); ok('MongoDB stores only the object key, never the URL');
+    assert.equal((await fetch(`${base}/distributions/${id}/proof-url`)).status, 401);
+    assert.equal((await fetch(`${base}/distributions/${id}/proof-url`, { headers: { Authorization: 'Bearer bad' } })).status, 401);
+    assert.equal((await fetch(`${base}/distributions/${id}/proof-url`, { headers: tokenFor('GUEST') })).status, 403);
+    assert.equal((await fetch(`${base}/distributions/not-an-id/proof-url`, { headers: auth })).status, 400);
+    assert.equal((await fetch(`${base}/distributions/${new mongoose.Types.ObjectId()}/proof-url`, { headers: auth })).status, 404); ok('the URL lookup route still requires authentication and a role, and rejects bad or unknown IDs');
+    const legacyLink = await (await fetch(`${base}/distributions/${legacyId}/proof-url`, { headers: auth })).json() as any;
+    assert.equal(legacyLink.data.source, 'MONGODB'); assert.equal(legacyLink.data.url, null); ok('legacy MongoDB proofs return no URL, so the client uses the authenticated stream');
+    const noProof = await courier(); assert.equal((await fetch(`${base}/distributions/${noProof}/proof-url`, { headers: auth })).status, 404); ok('a distribution without a proof returns 404');
+
+    // ---- URL construction and upload ACL (pure) ----
+    assert.equal(spacesObjectUrl('https://nyc3.digitaloceanspaces.com', 'adinn-test', 'proofs/2026/abc/x.jpg'), 'https://adinn-test.nyc3.digitaloceanspaces.com/proofs/2026/abc/x.jpg');
+    assert.equal(spacesObjectUrl('nyc3.digitaloceanspaces.com/', 'adinn-test', 'proofs/a b/x.jpg'), 'https://adinn-test.nyc3.digitaloceanspaces.com/proofs/a%20b/x.jpg'); ok('object URLs are https://<bucket>.<region>.digitaloceanspaces.com/<key> (endpoint with or without scheme; CDN base unused)');
+    assert.equal(proofPutInput('b', 'proofs/k.jpg', Buffer.from('x'), 'image/jpeg').ACL, 'public-read'); ok('every Space upload requests public-read so the direct URL opens');
 
     // ---- Configuration ----
     const saved = { ...process.env };

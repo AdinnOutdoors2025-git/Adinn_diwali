@@ -15,4 +15,6 @@ export const STATUS_FLOW: Record<DistributionMode, readonly DeliveryStatus[]> = 
 
 // Every distribution is exactly this many; the server sets it, so it cannot be edited from the browser.
 export const DISTRIBUTION_QUANTITY = 5;
+export const MIN_ADDRESS_LENGTH = 5;
+export const MAX_ADDRESS_LENGTH = 500;
 export const MAX_PROOF_MB = 2;

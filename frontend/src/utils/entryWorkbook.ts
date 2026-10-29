@@ -4,7 +4,7 @@ import { MODE_LABEL, MODE_OPTIONS, STATUS_FLOW, STATUS_LABEL } from '../config/d
 import { bucketOf, quantityOf, quantityTotals } from './distributionStats';
 
 export interface EntryExportFilters {
-  year: number; type: string; bd: string; status: 'ALL' | 'GIVEN' | 'NOT_GIVEN'; mode: string; deliveryStatus: string; search: string;
+  year: number; occasion?: string; type: string; bd: string; status: 'ALL' | 'GIVEN' | 'NOT_GIVEN'; mode: string; deliveryStatus: string; search: string;
 }
 const theme = { navy: '14213D', orange: 'F59E0B', gold: 'FCD34D', ivory: 'FFFBEB', white: 'FFFFFF', green: '059669', rose: 'E11D48', slate: '64748B' };
 const ns = { sheet: 'http://schemas.openxmlformats.org/spreadsheetml/2006/main', rel: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
@@ -94,8 +94,9 @@ export function buildEntryWorkbook(records: DistributionRow[], bds: BD[], filter
   const summary: Matrix = [];
   const put = (row: number, column: number, value: Value, style = 0) => { summary[row - 1] ||= []; summary[row - 1][column - 1] = { value, style }; };
   const merges = ['A1:L2', 'E3:L3', 'B4:C4', 'E4:L4', 'B5:C5', 'E5:L5', 'B6:C6', 'E6:L6', 'A12:L12', 'A13:L13', 'A14:L14', 'A15:L15'];
-  put(1, 1, 'ADINN | Diwali Sweet Distribution Report', 1);
-  put(3, 1, 'Diwali year', 2); put(3, 2, filters.year, 24); put(3, 4, 'Generated (IST)', 2); put(3, 5, dateText(new Date().toISOString()), 22);
+  const occasionName = filters.occasion || 'Diwali';
+  put(1, 1, `ADINN | ${occasionName} Sweet Distribution Report`, 1);
+  put(3, 1, `${occasionName} year`, 2); put(3, 2, filters.year, 24); put(3, 4, 'Generated (IST)', 2); put(3, 5, dateText(new Date().toISOString()), 22);
   put(4, 1, 'Type', 2); put(4, 2, filters.type === 'ALL' ? 'All Types' : filters.type);
   put(4, 4, 'Requestee Name', 2); put(4, 5, selectedBD ? `${selectedBD.name} (${selectedBD.email})` : 'All Requestees');
   put(5, 1, 'Search', 2); put(5, 2, filters.search || 'All clients');

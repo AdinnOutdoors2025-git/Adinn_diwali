@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Search, RefreshCw, Upload, Download, Gift, RotateCcw, Paperclip, Pencil } from 'lucide-react';
+import { Plus, Search, RefreshCw, Upload, Download, Gift, RotateCcw, Paperclip, Pencil, Eye } from 'lucide-react';
 import { buildEntryWorkbook } from '../utils/entryWorkbook';
 import { api, ApiError } from '../services/api';
-import { BD, DistributionRow, TYPE_OPTIONS, ClientType } from '../types';
-import { DISTRIBUTION_QUANTITY, DeliveryStatus, DistributionMode, MAX_PROOF_MB, MODE_LABEL, MODE_OPTIONS, STATUS_FLOW, STATUS_LABEL } from '../config/distribution';
+import { BD, DistributionRow, Occasion, TYPE_OPTIONS, ClientType } from '../types';
+import { DISTRIBUTION_QUANTITY, DeliveryStatus, DistributionMode, MAX_ADDRESS_LENGTH, MAX_PROOF_MB, MIN_ADDRESS_LENGTH, MODE_LABEL, MODE_OPTIONS, STATUS_FLOW, STATUS_LABEL } from '../config/distribution';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { YearPicker } from '../components/YearPicker';
 import { AddRequesteeModal } from '../components/AddRequesteeModal';
 import { StatusDropdown } from '../components/StatusDropdown';
 import { InlineClientRow, ClientDraft } from '../components/InlineClientRow';
 import { Modal } from '../components/Modal';
+import { DistributionDetailsModal } from '../components/DistributionDetailsModal';
 import { DEFAULT_YEAR, YEAR_OPTIONS } from '../config/diwaliYear';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../context/ToastContext';
@@ -23,12 +24,15 @@ type StageFilter = 'ALL' | DeliveryStatus;
 const isJpeg = (file: File) => file.type === 'image/jpeg' && /\.jpe?g$/i.test(file.name);
 
 export const DistributionEntry: React.FC = () => {
-  const { success, info } = useToast();
+  const { success, info, error: toastError } = useToast();
   const [duplicate, setDuplicate] = useState<ClientDraft | null>(null);
   const [duplicateMessage, setDuplicateMessage] = useState('');
   const [linking, setLinking] = useState(false);
   const currentYear = DEFAULT_YEAR;
   const [year, setYear] = useState(currentYear);
+  const [occasions, setOccasions] = useState<Occasion[]>([]);
+  const [occasion, setOccasion] = useState('Diwali');
+  const [occasionState, setOccasionState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [type, setType] = useState('ALL');
   const [bd, setBD] = useState('ALL');
   const [status, setStatus] = useState<Status>('ALL');
@@ -53,11 +57,13 @@ export const DistributionEntry: React.FC = () => {
   const [actionYear, setActionYear] = useState(currentYear);
   const [association, setAssociation] = useState('');
   const [distMode, setDistMode] = useState<DistributionMode | ''>('');
+  const [address, setAddress] = useState('');
+  const [detailsRow, setDetailsRow] = useState<DistributionRow | null>(null);
   const [statusBusy, setStatusBusy] = useState<string | null>(null);
   const [proofTarget, setProofTarget] = useState<{ row: DistributionRow; next: DeliveryStatus } | null>(null);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofError, setProofError] = useState('');
-  const [proofView, setProofView] = useState<{ url: string; name: string } | null>(null);
+  const [proofView, setProofView] = useState<{ url: string; name: string; temporary: boolean } | null>(null);
   const statusPending = useRef(false);
   const [notes, setNotes] = useState('');
   const [actionError, setActionError] = useState('');
@@ -88,23 +94,43 @@ export const DistributionEntry: React.FC = () => {
     const version = ++requestVersion.current;
     setLoading(true); setPageError('');
     try {
-      const result = await api.getDistributions({ year, type, bd, status, mode, deliveryStatus, search, page, limit: 10 });
+      const result = await api.getDistributions({ year, occasion, type, bd, status, mode, deliveryStatus, search, page, limit: 10 });
       if (version !== requestVersion.current) return;
       setRecords(result.data); setTotal(result.pagination.total); setPages(result.pagination.totalPages);
       if (page > result.pagination.totalPages) setPage(result.pagination.totalPages);
     } catch (error: any) {
       if (version === requestVersion.current) { setPageError(error.message || 'Unable to load clients.'); setRecords([]); setTotal(0); }
     } finally { if (version === requestVersion.current) setLoading(false); }
-  }, [year, type, bd, status, mode, deliveryStatus, search, page]);
+  }, [year, occasion, type, bd, status, mode, deliveryStatus, search, page]);
   useEffect(() => {
     const timer = setTimeout(load, 200);
     return () => { clearTimeout(timer); requestVersion.current++; };
   }, [load]);
 
+  const loadOccasions = useCallback(async () => {
+    setOccasionState('loading');
+    try { const result = await api.getOccasions(); setOccasions(result.data); setOccasionState('ready'); }
+    catch { setOccasionState('error'); }
+  }, []);
+  useEffect(() => { loadOccasions(); }, [loadOccasions]);
+  const selectOccasion = (name: string) => { setOccasion(name || 'Diwali'); setPage(1); };
+  // "Add Occasion": saved in the database for everyone; a name that already exists (any case) just selects the existing one.
+  const addOccasion = async (term: string) => {
+    try {
+      const result = await api.createOccasion(term);
+      setOccasions(current => [...current.filter(item => item._id !== result.data._id), result.data]);
+      selectOccasion(result.data.name); success(result.message);
+    } catch (error: any) {
+      const existing = occasions.find(item => item.name.toLowerCase() === term.trim().replace(/\s+/g, ' ').toLowerCase());
+      if (error instanceof ApiError && existing) { selectOccasion(existing.name); info(`"${existing.name}" already exists and is now selected.`); }
+      else toastError(error.message || 'Unable to add the occasion.');
+    }
+  };
+
   const exportExcel = async () => {
     setExporting(true); setPageError('');
     // Capture the current filters, including master search, for the entire export.
-    const filters = { year, type, bd, status, mode, deliveryStatus, search };
+    const filters = { year, occasion, type, bd, status, mode, deliveryStatus, search };
     try {
       const clients = new Map<string, DistributionRow>();
       let exportPage = 1, totalPages = 1;
@@ -119,7 +145,7 @@ export const DistributionEntry: React.FC = () => {
       const blob = buildEntryWorkbook([...clients.values()], master.data, filters);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
-      anchor.href = url; anchor.download = `ADINN-Entry-${filters.year}.xlsx`;
+      anchor.href = url; anchor.download = `ADINN-Entry-${filters.occasion.replace(/[^\p{L}\p{N}]+/gu, '-')}-${filters.year}.xlsx`;
       document.body.appendChild(anchor); anchor.click(); anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       success(`Exported ${clients.size} matching clients.`);
@@ -173,7 +199,7 @@ export const DistributionEntry: React.FC = () => {
   };
   const openAction = (row: DistributionRow, kind: 'give' | 'revert') => {
     setTarget(row); setAction(kind); setActionYear(year); setNotes(''); setActionError('');
-    setDistMode('');
+    setDistMode(''); setAddress('');
     setAssociation(row.associations.find(link => link.bd && link.type)?._id || '');
   };
   const confirmAction = async (event: React.FormEvent) => {
@@ -182,11 +208,13 @@ export const DistributionEntry: React.FC = () => {
     const link = target.associations.find(link => link._id === association);
     if (action === 'give' && (!link?.bd || !link.type)) { setActionError('Choose a valid client association with a Type.'); return; }
     if (action === 'give' && !distMode) { setActionError('Select a Distribution Mode: Courier or In-person.'); return; }
+    const cleanAddress = address.trim().replace(/[ \t]+/g, ' ');
+    if (action === 'give' && distMode === 'COURIER' && (cleanAddress.length < MIN_ADDRESS_LENGTH || cleanAddress.length > MAX_ADDRESS_LENGTH)) { setActionError(`Enter the delivery address for Courier (${MIN_ADDRESS_LENGTH} to ${MAX_ADDRESS_LENGTH} characters).`); return; }
     if (action === 'revert' && notes.trim().length < 5) { setActionError('Enter a reason of at least 5 characters.'); return; }
     actionPending.current = true; setSubmitting(true); setActionError('');
     try {
       const result = action === 'give'
-        ? await api.createDistribution({ clientId: target.clientId, year: actionYear, type: link!.type!, bd: link!.bd!._id, mode: distMode as DistributionMode, notes: notes.trim() })
+        ? await api.createDistribution({ clientId: target.clientId, year: actionYear, occasion, type: link!.type!, bd: link!.bd!._id, mode: distMode as DistributionMode, ...(distMode === 'COURIER' ? { address: cleanAddress } : {}), notes: notes.trim() })
         : await api.revertDistribution(target.currentYearDistribution!._id, notes.trim());
       success(result.message); setTarget(null); await load();
     } catch (error: any) { setActionError(error.message || 'Unable to save distribution.'); }
@@ -228,11 +256,14 @@ export const DistributionEntry: React.FC = () => {
   };
   const viewProof = async (row: DistributionRow) => {
     try {
-      const blob = await api.getDeliveryProof(row.currentYearDistribution!._id);
-      setProofView({ url: URL.createObjectURL(blob), name: row.clientName });
+      const id = row.currentYearDistribution!._id;
+      const link = await api.getDeliveryProofLink(id);
+      // New proofs: the <img> loads the signed Space URL directly. Legacy MongoDB proofs still need the authenticated blob fetch.
+      if (link.url) setProofView({ url: link.url, name: row.clientName, temporary: false });
+      else setProofView({ url: URL.createObjectURL(await api.getDeliveryProof(id)), name: row.clientName, temporary: true });
     } catch (error: any) { setPageError(error.message || 'Unable to load delivery proof.'); }
   };
-  useEffect(() => () => { if (proofView) URL.revokeObjectURL(proofView.url); }, [proofView]);
+  useEffect(() => () => { if (proofView?.temporary) URL.revokeObjectURL(proofView.url); }, [proofView]);
 
   return (
     <div className="space-y-4 min-w-0">
@@ -240,10 +271,18 @@ export const DistributionEntry: React.FC = () => {
         title="Client Already Exists!" message={duplicateMessage} confirmLabel="Yes, Add to Existing" cancelLabel="Cancel" />
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-slate-900">Entry</h1>
-        <button type="button" onClick={exportExcel} disabled={exporting || loading}
-          className="inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg disabled:opacity-50">
-          <Download className="w-4 h-4" />{exporting ? 'Exporting...' : 'Export Excel'}
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="w-44 sm:w-52" data-occasion-select>
+            <SearchableSelect ariaLabel="Occasion" size="filter" searchable searchPlaceholder="Search occasions..." onCreate={addOccasion} createLabel="Add Occasion" clearable={false} menuMinWidth={300}
+              value={occasion} onChange={selectOccasion} placeholder={occasionState === 'loading' ? 'Loading occasions...' : 'Select occasion'}
+              options={(occasions.length ? occasions : [{ _id: 'diwali', name: 'Diwali', isDefault: true }]).map(item => ({ value: item.name, label: item.name }))} />
+            {occasionState === 'error' && <span role="alert" className="block mt-1 text-xs text-rose-700">Could not load occasions. <button type="button" onClick={loadOccasions} className="underline font-semibold">Retry</button></span>}
+          </div>
+          <button type="button" onClick={exportExcel} disabled={exporting || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg disabled:opacity-50">
+            <Download className="w-4 h-4" />{exporting ? 'Exporting...' : 'Export Excel'}
+          </button>
+        </div>
       </div>
       <section aria-label="Global master search" className="relative">
         <Search className="absolute left-4 top-4 w-5 h-5 text-amber-600" />
@@ -254,7 +293,7 @@ export const DistributionEntry: React.FC = () => {
 
       <section aria-label="Distribution filters" className="grid grid-cols-1 min-[400px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 p-4 bg-white border border-slate-200 rounded-xl">
         <div className="text-xs font-semibold text-slate-600">Year
-          <YearPicker ariaLabel="Year" className="mt-1.5" value={year} years={YEAR_OPTIONS} currentYear={currentYear} onChange={value => { setYear(value); setPage(1); }} />
+          <YearPicker ariaLabel="Year" label={occasion} className="mt-1.5" value={year} years={YEAR_OPTIONS} currentYear={currentYear} onChange={value => { setYear(value); setPage(1); }} />
         </div>
         <div className="text-xs font-semibold text-slate-600">Type
           <SearchableSelect ariaLabel="Type" size="filter" clearable={false} className="mt-1.5" value={type} onChange={value => { setType(value || 'ALL'); setPage(1); }}
@@ -328,6 +367,8 @@ export const DistributionEntry: React.FC = () => {
                     {row.isEligible ? <button type="button" disabled={!row.associations.some(link => link.bd && link.type)} title={row.associations.some(link => link.bd && link.type) ? undefined : 'Link a Type and Requestee before distributing'} onClick={() => openAction(row, 'give')} className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-md font-semibold disabled:opacity-40"><Gift className="w-3.5 h-3.5" />Add Distribution</button>
                       : <><span className="text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 whitespace-nowrap">Given in {year}</span>
                         <button type="button" onClick={() => openAction(row, 'revert')} className="inline-flex items-center gap-1 text-rose-700 font-semibold"><RotateCcw className="w-3 h-3" />Revert</button></>}
+                    <button type="button" aria-label={`View details for ${row.clientName}`} title="View details" data-view-details onClick={() => setDetailsRow(row)}
+                      className="order-last inline-flex items-center justify-center w-8 h-8 shrink-0 rounded-md border border-slate-200 text-slate-500 hover:text-amber-700 hover:border-amber-300 hover:bg-amber-50"><Eye className="w-4 h-4" /></button>
                     <button type="button" aria-label={`Edit ${row.clientName}`} title={row.associationId ? 'Edit this row' : 'Nothing to edit: this client has no Type/Requestee link'} disabled={!row.associationId} onClick={() => editClient(row)}
                       className="ml-auto inline-flex items-center justify-center w-8 h-8 shrink-0 rounded-md border border-slate-200 text-slate-500 hover:text-amber-700 hover:border-amber-300 hover:bg-amber-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 disabled:hover:border-slate-200"><Pencil className="w-4 h-4" /></button>
                   </div>
@@ -346,7 +387,7 @@ export const DistributionEntry: React.FC = () => {
       <AddRequesteeModal isOpen={!!addRequestee} term={addRequestee?.term || ''} existing={bds} onClose={() => setAddRequestee(null)} onSaved={onRequesteeSaved} />
       <ExcelImportModal isOpen={importOpen} onClose={() => setImportOpen(false)} bds={bds} onImported={load} />
 
-      <Modal isOpen={!!target} onClose={() => { if (!submitting) setTarget(null); }} title={action === 'give' ? 'Record Diwali Sweet Distribution' : 'Revert Distribution'} subtitle={`${target?.clientName || ''} - Diwali ${actionYear}`}>
+      <Modal isOpen={!!target} onClose={() => { if (!submitting) setTarget(null); }} title={action === 'give' ? `Record ${occasion} Sweet Distribution` : 'Revert Distribution'} subtitle={`${target?.clientName || ''} - ${occasion} ${actionYear}`}>
         <form onSubmit={confirmAction} className="space-y-4">
           {actionError && <p role="alert" className="text-xs text-rose-700 bg-rose-50 p-3 rounded">{actionError}</p>}
           {action === 'give' ? <>
@@ -363,6 +404,9 @@ export const DistributionEntry: React.FC = () => {
                 </label>)}
               </div>
             </fieldset>
+            {distMode === 'COURIER' && <label className="block text-xs font-semibold text-slate-600">Delivery address <span className="text-rose-600">*</span>
+              <textarea aria-label="Delivery address" data-courier-address rows={3} required minLength={MIN_ADDRESS_LENGTH} maxLength={MAX_ADDRESS_LENGTH} value={address} disabled={submitting} onChange={event => setAddress(event.target.value)} placeholder="Door no., street, area, city, PIN code" className={`${control} mt-1.5`} />
+            </label>}
             <p className="text-xs text-amber-800 bg-amber-50 p-3 rounded-lg">Confirming blocks further sweet distribution to this client in {actionYear} across all Types and Requestees.</p>
           </> : <p className="text-xs text-slate-600">Reverse only this client's {actionYear} distribution? The original record and notes will be retained with your reason. The client will become eligible again for this year.</p>}
           <label className="block text-xs font-semibold text-slate-600">{action === 'give' ? 'Distribution notes (optional)' : 'Reason for reverting (required)'}
@@ -389,8 +433,13 @@ export const DistributionEntry: React.FC = () => {
         </form>
       </Modal>
 
+      <DistributionDetailsModal row={detailsRow} year={year} occasion={occasion} onClose={() => setDetailsRow(null)} />
+
       <Modal isOpen={!!proofView} onClose={() => setProofView(null)} title="Delivery Proof" subtitle={proofView?.name}>
-        {proofView && <img src={proofView.url} alt={`Delivery proof for ${proofView.name}`} className="max-h-[70vh] w-full object-contain rounded-lg border border-slate-200" />}
+        {proofView && <>
+          <img src={proofView.url} referrerPolicy="no-referrer" onError={() => { setProofView(null); setPageError('The delivery proof link could not be opened. Try again.'); }} alt={`Delivery proof for ${proofView.name}`} className="max-h-[70vh] w-full object-contain rounded-lg border border-slate-200" />
+          {!proofView.temporary && <a href={proofView.url} target="_blank" rel="noopener noreferrer" data-proof-url className="mt-3 block text-xs text-amber-700 hover:text-amber-800 underline break-all">{proofView.url}</a>}
+        </>}
       </Modal>
     </div>
   );

@@ -24,6 +24,8 @@ export const nextStatus = (mode: DistributionMode, current: DeliveryStatus): Del
 // Every distribution is exactly this many sweets. It is set here, never taken from the request.
 export const DISTRIBUTION_QUANTITY = 5;
 // Fixed cap (not env-configurable) so the frontend and backend always agree.
+export const MIN_ADDRESS_LENGTH = 5;
+export const MAX_ADDRESS_LENGTH = 500;
 export const MAX_PROOF_MB = 2;
 export const MAX_PROOF_BYTES = MAX_PROOF_MB * 1024 * 1024;
 

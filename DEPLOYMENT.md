@@ -11,7 +11,7 @@ Backend: Render. Frontend: Vercel (`frontend/vercel.json` rewrites `/api/*` to t
 | `JWT_SECRET` | At least 32 random characters. The server refuses to start in production if it is missing, short, or a known/published value |
 | `USE_MEMORY_DB_IF_LOCAL_FAILS` | `false` |
 | `CORS_ORIGINS` | Optional, comma-separated extra origins |
-| `DO_SPACES_KEY`, `DO_SPACES_SECRET`, `DO_SPACES_ENDPOINT`, `DO_SPACES_REGION`, `DO_SPACES_BUCKET` | Required for delivery-proof uploads. The bucket must be private. `DO_SPACES_CDN_BASE` is not used. Proofs are capped at 2 MB (fixed in code; `MAX_PROOF_MB` is no longer read) |
+| `DO_SPACES_KEY`, `DO_SPACES_SECRET`, `DO_SPACES_ENDPOINT`, `DO_SPACES_REGION`, `DO_SPACES_BUCKET` | Required for delivery-proof uploads. Proof objects are uploaded public-read (see below). `DO_SPACES_CDN_BASE` is not used. Proofs are capped at 2 MB (fixed in code; `MAX_PROOF_MB` is no longer read) |
 
 Build command `npm install && npm run build`, start command `npm start`.
 
@@ -60,4 +60,10 @@ Run order: deploy the backend first (confirm `/api/health`), then the frontend. 
 1. `GET /api/health` returns 200 and `connected`.
 2. Log in, load Entry, confirm old rows show "Unassigned" / "Legacy" and no data is missing.
 3. Upload one 1-2 MB JPEG proof on a Courier > Delivered record and view it. This goes through the Vercel rewrite, whose request-size limit is not verified here. If it fails, check the Vercel request-size limit.
-4. Atlas storage: new proofs are stored in the private DigitalOcean Space (up to 2 MB each); proofs uploaded before this change stay in MongoDB and remain viewable. Check that Spaces uploads and viewing work after deploy.
+4. Atlas storage: new proofs are stored in the DigitalOcean Space (public-read objects) (up to 2 MB each); proofs uploaded before this change stay in MongoDB and remain viewable. Check that Spaces uploads and viewing work after deploy.
+
+## Delivery proof viewing (direct Space URLs)
+- No new environment variables. Uploads use the existing `DO_SPACES_*` credentials on the backend only.
+- New proofs are uploaded with a `public-read` ACL. MongoDB stores only the object key; `GET /api/distributions/:id/proof-url` (login + STAFF/CMD role) returns the direct URL `https://<bucket>.<region>.digitaloceanspaces.com/<key>`, built from `DO_SPACES_ENDPOINT` and `DO_SPACES_BUCKET` (not the CDN base). The viewer loads that URL directly. Legacy MongoDB proofs fall back to `GET /api/distributions/:id/proof`.
+- **Privacy trade-off:** anyone who has a proof URL can open it without logging in. Keys contain a random UUID so URLs cannot be guessed, but they are not secret once shared. Only the `proofs/` objects are public; the bucket itself still has no public listing.
+- Objects uploaded earlier with a private ACL are made public by `npx tsx src/utils/makeProofsPublic.ts --execute` (dry run without the flag). It only changes ACLs.

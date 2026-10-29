@@ -5,19 +5,21 @@ import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-rea
 interface Props {
   value: number;
   years: number[];
-  /** The operating Diwali year; marked in the grid and offered as a shortcut. */
+  /** The operating year; marked in the grid and offered as a shortcut. */
   currentYear?: number;
   onChange: (year: number) => void;
   ariaLabel?: string;
   disabled?: boolean;
   className?: string;
+  /** Occasion name shown beside the year, e.g. Diwali or Pongal. */
+  label?: string;
 }
 
 const PAGE = 12; // 4 columns x 3 rows
 
 // A year "calendar": a 4x3 grid of years with paging. Years outside the allowed list are shown but disabled,
 // so the grid still reads as a calendar.
-export const YearPicker: React.FC<Props> = ({ value, years, currentYear, onChange, ariaLabel = 'Year', disabled, className = '' }) => {
+export const YearPicker: React.FC<Props> = ({ value, years, currentYear, onChange, ariaLabel = 'Year', disabled, className = '', label = 'Diwali' }) => {
   const first = years[0] ?? value, last = years[years.length - 1] ?? value;
   const pageStart = (year: number) => first + Math.floor((year - first) / PAGE) * PAGE;
   const [open, setOpen] = useState(false);
@@ -71,11 +73,11 @@ export const YearPicker: React.FC<Props> = ({ value, years, currentYear, onChang
       <button ref={triggerRef} type="button" role="combobox" aria-label={ariaLabel} aria-haspopup="dialog" aria-expanded={open} disabled={disabled}
         onClick={() => setOpen(current => !current)} onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}
         className={`w-full flex items-center justify-between bg-white border rounded-lg px-3 py-2.5 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 disabled:bg-slate-100 disabled:text-slate-400 ${open ? 'ring-2 ring-amber-500/20 border-amber-500' : 'border-slate-300 hover:border-slate-400'}`}>
-        <span className="flex items-center gap-2 text-slate-800 font-medium"><CalendarDays className="w-4 h-4 text-amber-600" aria-hidden="true" />Diwali {value}</span>
+        <span className="flex items-center gap-2 text-slate-800 font-medium"><CalendarDays className="w-4 h-4 text-amber-600" aria-hidden="true" />{label} {value}</span>
         <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${open ? 'rotate-180 text-amber-600' : ''}`} />
       </button>
       {open && createPortal(
-        <div ref={panelRef} tabIndex={-1} role="dialog" aria-label="Choose Diwali year" onKeyDown={onKey}
+        <div ref={panelRef} tabIndex={-1} role="dialog" aria-label={`Choose ${label} year`} onKeyDown={onKey}
           style={{ position: 'fixed', top: box.top, left: box.left, width, zIndex: 70 }}
           className="outline-none bg-white border border-slate-200 rounded-xl shadow-2xl ring-1 ring-black/5 p-3">
           <div className="flex items-center justify-between mb-2">
@@ -87,7 +89,7 @@ export const YearPicker: React.FC<Props> = ({ value, years, currentYear, onChang
             {cells.map(year => {
               const enabled = allowed.has(year), selected = year === value, focused = year === focusYear, current = year === currentYear;
               return (
-                <button key={year} type="button" role="gridcell" aria-selected={selected} aria-label={`Diwali ${year}${current ? ' (current)' : ''}`} disabled={!enabled}
+                <button key={year} type="button" role="gridcell" aria-selected={selected} aria-label={`${label} ${year}${current ? ' (current)' : ''}`} disabled={!enabled}
                   onClick={() => pick(year)} onMouseEnter={() => enabled && setFocusYear(year)}
                   className={`relative h-11 rounded-lg text-sm font-semibold transition-colors ${
                     selected ? 'bg-amber-600 text-white shadow-sm' : !enabled ? 'text-slate-300 cursor-not-allowed' : focused ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300' : 'text-slate-700 hover:bg-slate-100'}`}>
@@ -98,7 +100,7 @@ export const YearPicker: React.FC<Props> = ({ value, years, currentYear, onChang
             })}
           </div>
           <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-100 text-[11px] text-slate-500">
-            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Current Diwali year</span>
+            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Current year</span>
             {currentYear !== undefined && allowed.has(currentYear) && <button type="button" onClick={() => pick(currentYear)} className="font-semibold text-amber-700 hover:text-amber-800">Jump to {currentYear}</button>}
           </div>
         </div>, document.body)}

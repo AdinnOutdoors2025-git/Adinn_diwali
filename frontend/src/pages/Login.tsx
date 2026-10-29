@@ -60,7 +60,7 @@ export const Login: React.FC = () => {
         </h2>
         <p className="mt-1 text-sm text-slate-600 flex items-center justify-center gap-1.5 font-medium">
           <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-          Diwali Sweet Distribution Portal
+          Festival Sweet Distribution Portal
         </p>
       </div>
 
@@ -145,7 +145,7 @@ export const Login: React.FC = () => {
 
         {/* Footer info */}
         <p className="mt-4 text-center text-xs text-slate-500">
-          Adinn Advertising Internal Sweet Distribution System &bull; Diwali 2026
+          Adinn Advertising Internal Sweet Distribution System
         </p>
       </div>
     </div>

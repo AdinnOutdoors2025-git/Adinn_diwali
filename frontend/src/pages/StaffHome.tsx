@@ -14,13 +14,13 @@ export const StaffHome: React.FC = () => {
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-semibold mb-3 border border-amber-500/30">
             <Sparkles className="w-3.5 h-3.5" />
-            Diwali Distribution 2026 &bull; Operations Portal
+            Sweet Distribution Operations Portal
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Welcome, {user?.name || 'Staff Member'}!
           </h1>
           <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-            Record annual Diwali sweet distribution and manage client/vendor registrations across all client types and Requestees.
+            Record sweet distribution for each festival and manage client/vendor registrations across all client types and Requestees.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link

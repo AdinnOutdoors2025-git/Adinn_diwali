@@ -46,6 +46,11 @@ assert.deepEqual(details.slice(1).map(r => r[statusCol]), ['In Progress', 'In Pr
 const types = sheet('Type Analytics'); assert.deepEqual(types[0].slice(0, 5), ['Type', 'Eligible clients/vendors', 'Given', 'In Progress', 'Not Given']);
 assert.deepEqual(types.find(r => r[0] === 'Client')!.slice(2, 5), [3, 3, 2]); ok('Excel: Summary KPIs, per-mode status table, details and analytics are consistent');
 
+const pongalBlob = buildEntryWorkbook(rows, [{ _id: 'bd1', name: 'B', email: 'b@x.com' } as any], { year: 2026, occasion: 'Pongal', type: 'ALL', bd: 'ALL', status: 'ALL', mode: 'ALL', deliveryStatus: 'ALL', search: '' });
+const pongalBook = XLSX.read(Buffer.from(await pongalBlob.arrayBuffer()), { type: 'buffer' });
+const pongalText = XLSX.utils.sheet_to_json<any[]>(pongalBook.Sheets['Summary'], { header: 1, defval: '' }).map(r => r.join('|')).join('\n');
+assert.ok(pongalText.includes('Pongal Sweet Distribution Report') && pongalText.includes('Pongal year') && !pongalText.includes('Diwali Sweet Distribution Report'));
+assert.ok(summary.includes('Diwali Sweet Distribution Report')); ok('Excel Summary is titled with the selected occasion (Diwali when none is given)');
 console.log(`\n${passed} passed`);
 }
 main().catch(e => { console.error(e); process.exit(1); });

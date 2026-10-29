@@ -52,8 +52,9 @@ async function main() {
     const r = await call('POST', '/clients', { name, mobile: String(++phone), type: 'Vendor', bd: String(bd1._id), ...over });
     assert.equal(r.status, 201, JSON.stringify(r.body)); return r.body.data.clientId as string;
   };
-  const give = (clientId: string, over: object = {}) => call('POST', '/distributions',
-    { clientId, year: 2026, type: 'Vendor', bd: String(bd1._id), mode: 'IN_PERSON', ...over });
+  // Courier distributions need an address; tests that do not care get a valid one unless they pass their own.
+  const give = (clientId: string, over: any = {}) => call('POST', '/distributions',
+    { clientId, year: 2026, type: 'Vendor', bd: String(bd1._id), mode: 'IN_PERSON', ...(over.mode === 'COURIER' && !('address' in over) ? { address: '12 Test Street, Chennai 600001' } : {}), ...over });
   const row = async (clientId: string, query = 'year=2026') => (await call('GET', `/distributions?${query}&limit=100`)).body.data.find((r: any) => r.clientId === clientId);
   let bd1: any, bd2: any;
   try {
@@ -108,6 +109,19 @@ async function main() {
     assert.equal(courier.status, 201); assert.equal(courier.body.data.mode, 'COURIER'); assert.equal(courier.body.data.status, 'INITIATE');
     assert.equal((await row(modeClient)).currentYearDistribution.mode, 'COURIER'); ok('Courier mode persists and starts at Initiate');
 
+    // ---- Courier address ----
+    const addrClient = await newClient('Address Co'); const addrOnly = { clientId: addrClient, year: 2026, type: 'Vendor', bd: String(bd1._id), mode: 'COURIER' };
+    for (const bad of [undefined, '', '   ', 'abc', 'x'.repeat(501), 12345, null]) assert.equal((await call('POST', '/distributions', { ...addrOnly, address: bad })).status, 400);
+    assert.equal(await SweetDistribution.countDocuments({ client: addrClient }), 0); ok('Courier without a valid address (missing, blank, too short, too long, non-string) is rejected and nothing is saved');
+    const addrOk = await call('POST', '/distributions', { ...addrOnly, address: '  14,   Gandhi Road\nT. Nagar, Chennai 600017  ' });
+    const expectedAddress = '14, Gandhi Road\nT. Nagar, Chennai 600017';
+    assert.equal(addrOk.status, 201); assert.equal(addrOk.body.data.address, expectedAddress);
+    assert.equal((await SweetDistribution.findById(addrOk.body.data._id))!.address, expectedAddress); ok('Courier address is trimmed and saved in MongoDB');
+    assert.equal((await row(addrClient)).currentYearDistribution.address, expectedAddress); ok('the saved address is returned in the distribution payload');
+    const walkIn = await newClient('Walk In Co'); const walkGive = await give(walkIn, { mode: 'IN_PERSON', address: 'Should not be kept 12345' });
+    assert.equal(walkGive.status, 201); assert.equal((await SweetDistribution.findById(walkGive.body.data._id))!.address, undefined);
+    assert.equal((await row(walkIn)).currentYearDistribution.address, null); ok('In-person needs no address and any address sent is not stored or returned');
+
     // ---- Courier workflow ----
     const courierId = courier.body.data._id as string;
     for (const target of ['SHIPPING', 'DELIVERED', 'INITIATE', 'BOGUS']) assert.ok([400, 409].includes((await setStatus(courierId, target)).status));
@@ -131,6 +145,28 @@ async function main() {
     const proofRes = await fetch(`${base}/distributions/${courierId}/proof`, { headers: auth });
     assert.equal(proofRes.status, 200); assert.equal(proofRes.headers.get('content-type'), 'image/jpeg');
     assert.deepEqual(Buffer.from(await proofRes.arrayBuffer()), jpeg(1000)); ok('stored proof is returned byte-for-byte with an image/jpeg content type');
+
+    // ---- Delivered timestamp and details popup payload ----
+    const deliveredDoc = (await SweetDistribution.findById(courierId))!;
+    assert.ok(deliveredDoc.deliveredAt instanceof Date && Math.abs(Date.now() - deliveredDoc.deliveredAt.getTime()) < 120000);
+    const deliveredEntry = deliveredDoc.statusHistory.find(entry => entry.status === 'DELIVERED')!;
+    assert.equal(deliveredDoc.deliveredAt!.getTime(), deliveredEntry.at.getTime()); ok('Delivered saves a backend-generated deliveredAt in MongoDB, equal to the Delivered history entry');
+    const earlier = await SweetDistribution.findOne({ status: { $ne: 'DELIVERED' }, mode: 'COURIER' }); assert.ok(earlier); assert.equal(earlier!.deliveredAt, undefined); ok('records that are not Delivered have no deliveredAt');
+    const deliveredRow = await row(modeClient); assert.equal(new Date(deliveredRow.currentYearDistribution.deliveredAt).getTime(), deliveredDoc.deliveredAt!.getTime()); ok('deliveredAt is returned for the popup');
+    const modeAssoc = (await ClientAssociation.findOne({ client: modeClient }))!;
+    assert.equal((await call('PUT', `/clients/${modeAssoc._id}`, { name: 'Mode Co Renamed', email: 'moded@adinn.com' })).status, 200);
+    assert.equal((await SweetDistribution.findById(courierId))!.deliveredAt!.getTime(), deliveredDoc.deliveredAt!.getTime());
+    assert.equal((await setStatus(courierId, 'DELIVERED')).status, 409);
+    assert.equal((await SweetDistribution.findById(courierId))!.deliveredAt!.getTime(), deliveredDoc.deliveredAt!.getTime()); ok('deliveredAt is preserved by unrelated client edits and repeated Delivered attempts');
+    const historical = editGive.body.data._id as string; await SweetDistribution.collection.updateOne({ _id: new mongoose.Types.ObjectId(historical) }, { $unset: { deliveredAt: '' } });
+    assert.equal((await row(edit)).currentYearDistribution.deliveredAt, null);
+    assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { name: 'Edit Qty Co Again' })).status, 200);
+    assert.equal((await SweetDistribution.findById(historical))!.deliveredAt, undefined); ok('a Delivered record without a historical timestamp reports null (shown as Not recorded) and edits do not invent one');
+    const popup = await row(modeClient), pd = popup.currentYearDistribution;
+    for (const field of ['clientName', 'clientMobile', 'clientEmail', 'createdAt', 'lastGiven', 'associations']) assert.ok(popup[field] !== undefined, field);
+    assert.ok(popup.associations[0].type && popup.associations[0].bd.name && popup.associations[0].bd.email);
+    for (const field of ['quantity', 'mode', 'status', 'address', 'deliveredAt']) assert.ok(pd[field] !== undefined && pd[field] !== null, field);
+    assert.equal(pd.address, '12 Test Street, Chennai 600001'); ok('the list payload carries every field the details popup shows');
     assert.equal((await fetch(`${base}/distributions/${courierId}/proof`)).status, 401);
     assert.equal((await fetch(`${base}/distributions/${courierId}/proof`, { headers: { Authorization: 'Bearer nope' } })).status, 401);
     const unauthStatus = await fetch(`${base}/distributions/${courierId}/status`, { method: 'PATCH', body: new FormData() });
@@ -233,7 +269,7 @@ async function main() {
     assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Nope' })).status, 400);
     assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Govt. Official' })).status, 200);
     assert.equal((await ClientAssociation.findById(legacyAssoc.insertedId))!.type, 'Govt. Official');
-    assert.equal((await call('POST', '/distributions', { clientId: String(legacyClient.insertedId), year: 2027, type: 'Govt. Official', bd: String(bd1._id), mode: 'COURIER' })).status, 201); ok('a legacy link can be assigned a Type, after which it works with the new workflow');
+    assert.equal((await call('POST', '/distributions', { clientId: String(legacyClient.insertedId), year: 2027, type: 'Govt. Official', bd: String(bd1._id), mode: 'COURIER', address: '12 Test Street, Chennai 600001' })).status, 201); ok('a legacy link can be assigned a Type, after which it works with the new workflow');
     assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Client' })).status, 200);
     assert.equal((await ClientAssociation.findById(legacyAssoc.insertedId))!.type, 'Govt. Official'); ok('an assigned Type is not silently changed by edits');
     // Same client may hold several Types under one Requestee, and duplicates are blocked.
