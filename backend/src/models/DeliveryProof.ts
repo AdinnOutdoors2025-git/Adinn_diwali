@@ -1,14 +1,16 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-// Delivery proof images live in MongoDB (not on the app server's disk) so they survive redeploys and
-// restarts on hosts with ephemeral filesystems. Reads go through an authenticated API route only.
+// New proofs are stored in a private DigitalOcean Space: only the object key and metadata are kept here.
+// Legacy proofs (no storageKey) still hold their image bytes in `data` and stay readable.
+// Reads go through an authenticated API route only.
 export interface IDeliveryProof extends Document {
   distribution: mongoose.Types.ObjectId;
   originalName: string;
   contentType: 'image/jpeg';
   size: number;
   sha256: string;
-  data: Buffer;
+  data?: Buffer;
+  storageKey?: string;
   uploadedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
 }
@@ -20,7 +22,8 @@ const DeliveryProofSchema = new Schema<IDeliveryProof>(
     contentType: { type: String, enum: ['image/jpeg'], required: true },
     size: { type: Number, required: true, min: 1 },
     sha256: { type: String, required: true },
-    data: { type: Buffer, required: true },
+    data: { type: Buffer, required: function (this: IDeliveryProof) { return !this.storageKey; } },
+    storageKey: { type: String, trim: true, maxlength: 512 },
     uploadedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: { createdAt: true, updatedAt: false } }

@@ -7,6 +7,7 @@ import { ClientAssociation } from '../models/ClientAssociation.js';
 import { Client } from '../models/Client.js';
 import { BD } from '../models/BD.js';
 import { AuthRequest } from '../middleware/auth.js';
+import { getProofStorage } from '../config/proofStorage.js';
 import { FIRST_DIWALI_YEAR, isRecordableYear } from '../config/diwaliYear.js';
 import {
   DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, DISTRIBUTION_QUANTITY, quantityState,
@@ -194,14 +195,40 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
   }
 };
 
-const isValidJpeg = (buffer: Buffer): boolean =>
-  buffer.length > 4 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff &&
-  buffer.lastIndexOf(Buffer.from([0xff, 0xd9])) > 2;
+// Structural JPEG check: SOI, a walk over the marker segments to a start-of-frame with real dimensions and a
+// start-of-scan, then EOI. Rejects renamed PNG/PDF/text files and truncated or garbage data.
+export const isValidJpeg = (buffer: Buffer): boolean => {
+  if (buffer.length < 20 || buffer[0] !== 0xff || buffer[1] !== 0xd8 || buffer[2] !== 0xff) return false;
+  let offset = 2, frame = false;
+  while (offset + 4 <= buffer.length) {
+    if (buffer[offset] !== 0xff) return false;
+    const marker = buffer[offset + 1];
+    if (marker === 0xff) { offset++; continue; }
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { offset += 2; continue; }
+    if (marker === 0xd9) return false; // EOI before any scan data
+    const length = buffer.readUInt16BE(offset + 2);
+    if (length < 2 || offset + 2 + length > buffer.length) return false;
+    if ([0xc0, 0xc1, 0xc2].includes(marker)) {
+      if (length < 8 || buffer.readUInt16BE(offset + 5) === 0 || buffer.readUInt16BE(offset + 7) === 0) return false;
+      frame = true;
+    }
+    if (marker === 0xda) return frame && buffer.lastIndexOf(Buffer.from([0xff, 0xd9])) > offset + 2 + length;
+    offset += 2 + length;
+  }
+  return false;
+};
 
 // Moves a distribution one stage forward. Courier: Initiate > Dispatch > Shipping > Delivered. In-person: Initiate > Delivered.
 // Courier delivery requires a valid JPEG proof; in-person delivery accepts one optionally.
 export const updateDeliveryStatus = async (req: AuthRequest, res: Response): Promise<void> => {
   let proofId: mongoose.Types.ObjectId | null = null;
+  let uploadedKey: string | null = null;
+  // Removes only what this request created (its proof document and Space object), never pre-existing proofs.
+  const discardNewProof = async () => {
+    if (proofId) await DeliveryProof.deleteOne({ _id: proofId }).catch(() => undefined);
+    if (uploadedKey) await getProofStorage().remove(uploadedKey).catch(error => console.error('Could not remove orphaned proof object:', uploadedKey, error?.message));
+    proofId = null; uploadedKey = null;
+  };
   try {
     const { id } = req.params;
     const target = req.body?.status as DeliveryStatus;
@@ -228,9 +255,12 @@ export const updateDeliveryStatus = async (req: AuthRequest, res: Response): Pro
     }
     if (file) {
       if (!isValidJpeg(file.buffer)) { res.status(400).json({ success: false, message: 'The uploaded file is not a valid JPEG image.' }); return; }
+      const storageKey = `proofs/${distribution.distributionYear}/${distribution._id}/${crypto.randomUUID()}.jpg`;
+      await getProofStorage().put(storageKey, file.buffer, 'image/jpeg');
+      uploadedKey = storageKey;
       const proof = await DeliveryProof.create({
         distribution: distribution._id, originalName: file.originalname.slice(0, 255) || 'proof.jpg', contentType: 'image/jpeg',
-        size: file.size, sha256: crypto.createHash('sha256').update(file.buffer).digest('hex'), data: file.buffer,
+        size: file.size, sha256: crypto.createHash('sha256').update(file.buffer).digest('hex'), storageKey,
         uploadedBy: req.user?.id ? new mongoose.Types.ObjectId(req.user.id) : undefined,
       });
       proofId = proof._id as mongoose.Types.ObjectId;
@@ -243,7 +273,7 @@ export const updateDeliveryStatus = async (req: AuthRequest, res: Response): Pro
         $push: { statusHistory: { status: target, at: now, by: req.user?.id } } },
       { new: true });
     if (!updated) {
-      if (proofId) await DeliveryProof.deleteOne({ _id: proofId });
+      await discardNewProof();
       res.status(409).json({ success: false, message: 'This distribution was changed by someone else. Refresh and try again.' }); return;
     }
     res.status(200).json({ success: true, message: `Status updated to ${target}.`,
@@ -251,7 +281,7 @@ export const updateDeliveryStatus = async (req: AuthRequest, res: Response): Pro
         statusHistory: updated.statusHistory.map(entry => ({ status: entry.status, at: entry.at })) } });
   } catch (error: any) {
     console.error('Error updating delivery status:', error);
-    if (proofId) await DeliveryProof.deleteOne({ _id: proofId }).catch(() => undefined);
+    await discardNewProof();
     res.status(500).json({ success: false, message: 'Unable to update delivery status.' });
   }
 };
@@ -264,8 +294,19 @@ export const getDeliveryProof = async (req: Request, res: Response): Promise<voi
     const distribution = await SweetDistribution.findById(id).select('proof').lean();
     const proof = distribution?.proof ? await DeliveryProof.findById(distribution.proof) : null;
     if (!proof) { res.status(404).json({ success: false, message: 'No delivery proof on file.' }); return; }
-    res.set({ 'Content-Type': proof.contentType, 'Content-Length': String(proof.data.length), 'Content-Disposition': 'inline; filename="delivery-proof.jpg"',
-      'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+    const headers = { 'Content-Type': proof.contentType, 'Content-Disposition': 'inline; filename="delivery-proof.jpg"',
+      'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
+    if (proof.storageKey) {
+      // Private Space object: streamed through this authenticated route; the bucket is never public.
+      const object = await getProofStorage().get(proof.storageKey);
+      res.set({ ...headers, 'Content-Length': String(proof.size) }); res.status(200);
+      object.stream.on('error', () => res.destroy());
+      object.stream.pipe(res);
+      return;
+    }
+    // Legacy proof: image bytes still stored in MongoDB.
+    if (!proof.data) { res.status(404).json({ success: false, message: 'No delivery proof on file.' }); return; }
+    res.set({ ...headers, 'Content-Length': String(proof.data.length) });
     res.status(200).send(proof.data);
   } catch (error) {
     console.error('Error reading delivery proof:', error);

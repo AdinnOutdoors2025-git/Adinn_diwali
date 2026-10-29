@@ -210,11 +210,14 @@ export const DistributionEntry: React.FC = () => {
     if (next === 'DELIVERED') { setProofTarget({ row, next }); setProofFile(null); setProofError(''); return; }
     advanceStatus(row, next);
   };
-  const chooseProof = (file: File | undefined) => {
+  const chooseProof = async (file: File | undefined) => {
     setProofError('');
     if (!file) { setProofFile(null); return; }
     if (!isJpeg(file)) { setProofFile(null); setProofError('Delivery proof must be a JPEG/JPG image.'); return; }
-    if (file.size > MAX_PROOF_MB * 1024 * 1024) { setProofFile(null); setProofError(`Delivery proof must be ${MAX_PROOF_MB} MB or smaller.`); return; }
+    if (file.size > MAX_PROOF_MB * 1024 * 1024) { setProofFile(null); setProofError(`Delivery proof must be ${MAX_PROOF_MB} MB or smaller. This file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`); return; }
+    // Check the content, not just the name/MIME type: a JPEG starts with FF D8 FF.
+    const head = new Uint8Array(await file.slice(0, 3).arrayBuffer());
+    if (head[0] !== 0xff || head[1] !== 0xd8 || head[2] !== 0xff) { setProofFile(null); setProofError('This file is not a valid JPEG image.'); return; }
     setProofFile(file);
   };
   const confirmDelivered = (event: React.FormEvent) => {

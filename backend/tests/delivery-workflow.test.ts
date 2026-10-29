@@ -16,15 +16,19 @@ import { ClientAssociation, ensureAssociationIndexes } from '../src/models/Clien
 import { SweetDistribution, ensureDistributionIndexes } from '../src/models/SweetDistribution.js';
 import { DeliveryProof } from '../src/models/DeliveryProof.js';
 import { BD } from '../src/models/BD.js';
+import { setProofStorage } from '../src/config/proofStorage.js';
+import { memoryProofStorage } from './helpers/memoryProofStorage.js';
 
 let passed = 0;
 const ok = (label: string) => { passed++; console.log(`PASS: ${label}`); };
 
-// A structurally valid minimal JPEG (SOI ... EOI).
-const jpeg = (extra = 0) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]), Buffer.alloc(extra, 7), Buffer.from([0xff, 0xd9])]);
+// A structurally valid minimal JPEG: SOI, APP0, SOF0 (8x8), SOS, scan padding, EOI.
+const jpeg = (extra = 0) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0, 0, 1, 0, 1, 0, 0,
+  0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x08, 0x00, 0x08, 0x01, 0x01, 0x11, 0x00, 0xff, 0xda, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3f, 0x00]), Buffer.alloc(extra, 7), Buffer.from([0xff, 0xd9])]);
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 
 async function main() {
+  setProofStorage(memoryProofStorage().storage);
   const mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
   await ensureClientIndexes(); await ensureAssociationIndexes(); await ensureDistributionIndexes(); await DeliveryProof.init();

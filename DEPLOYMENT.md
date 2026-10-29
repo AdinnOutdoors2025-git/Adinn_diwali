@@ -11,7 +11,7 @@ Backend: Render. Frontend: Vercel (`frontend/vercel.json` rewrites `/api/*` to t
 | `JWT_SECRET` | At least 32 random characters. The server refuses to start in production if it is missing, short, or a known/published value |
 | `USE_MEMORY_DB_IF_LOCAL_FAILS` | `false` |
 | `CORS_ORIGINS` | Optional, comma-separated extra origins |
-| `MAX_PROOF_MB` | Optional (default 5) |
+| `DO_SPACES_KEY`, `DO_SPACES_SECRET`, `DO_SPACES_ENDPOINT`, `DO_SPACES_REGION`, `DO_SPACES_BUCKET` | Required for delivery-proof uploads. The bucket must be private. `DO_SPACES_CDN_BASE` is not used. Proofs are capped at 2 MB (fixed in code; `MAX_PROOF_MB` is no longer read) |
 
 Build command `npm install && npm run build`, start command `npm start`.
 
@@ -59,5 +59,5 @@ Run order: deploy the backend first (confirm `/api/health`), then the frontend. 
 
 1. `GET /api/health` returns 200 and `connected`.
 2. Log in, load Entry, confirm old rows show "Unassigned" / "Legacy" and no data is missing.
-3. Upload one 3-5 MB JPEG proof on a Courier > Delivered record and view it. This goes through the Vercel rewrite, whose request-size limit is not verified here. If it fails, lower `MAX_PROOF_MB`.
-4. Atlas storage: proofs are stored in MongoDB (up to 5 MB each), so watch the cluster size.
+3. Upload one 1-2 MB JPEG proof on a Courier > Delivered record and view it. This goes through the Vercel rewrite, whose request-size limit is not verified here. If it fails, check the Vercel request-size limit.
+4. Atlas storage: new proofs are stored in the private DigitalOcean Space (up to 2 MB each); proofs uploaded before this change stay in MongoDB and remain viewable. Check that Spaces uploads and viewing work after deploy.
