@@ -93,19 +93,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </NavLink>
         </nav>
 
-        {/* Festive Footer Badge */}
-        {(!isCollapsed || isMobileOpen) && (
-          <div className="p-3 mx-3 mb-3 rounded-lg bg-slate-800/50 border border-slate-700/60 text-xs">
-            <div className="flex items-center gap-1.5 text-amber-400 font-medium mb-1">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Diwali 2026 Edition</span>
-            </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Adinn Advertising Internal Sweet Distribution Portal
-            </p>
-          </div>
-        )}
-
         {/* Collapse toggle (Desktop only) */}
         <div className="hidden lg:flex items-center justify-end p-3 border-t border-slate-800/80">
           <button
