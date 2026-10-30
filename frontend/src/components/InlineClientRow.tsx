@@ -1,6 +1,8 @@
 import React from 'react';
 import { BD, TYPE_OPTIONS } from '../types';
 import { SearchableSelect } from './SearchableSelect';
+import { QuantityStepper } from './QuantityStepper';
+import { MAX_DISTRIBUTION_QUANTITY } from '../config/distribution';
 
 export interface ClientDraft {
   key: string;
@@ -8,6 +10,10 @@ export interface ClientDraft {
   name: string;
   mobile: string;
   email: string;
+  /** Sweets to give this client. Starts at 0; a new client needs more than 0 to save. */
+  quantity: number;
+  /** An edited client that already has a stored quantity must keep one above 0. */
+  hadQuantity?: boolean;
   saving: boolean;
   error: string;
   /** Stored phone of an edited record, so an untouched older-format number is not rejected. */
@@ -53,8 +59,9 @@ export const InlineClientRow: React.FC<Props> = ({ draft, onChange, onSave, onCa
         placeholder={bdState === 'loading' ? 'Loading Requestees...' : bdState === 'error' ? 'Requestees unavailable' : !distributionBDs.length ? 'No Requestees available' : 'Select Requestee'}
         options={distributionBDs.map(bd => ({ value: bd._id, label: bd.name, subtext: bd.email }))} /></td>
       <td className="p-4 text-slate-500">{distributionBDs.find(bd => bd._id === draft.bd)?.email || '—'}</td>
+      <td className="p-4 whitespace-nowrap"><QuantityStepper value={draft.quantity} max={MAX_DISTRIBUTION_QUANTITY} disabled={draft.saving} onChange={value => onChange({ quantity: value, error: '' })} /></td>
       <td className="p-4 text-slate-400">&mdash;</td><td className="p-4 text-slate-400">&mdash;</td>
-      <td className="p-4 text-slate-400">&mdash;</td><td className="p-4 text-slate-400">&mdash;</td>
+      <td className="p-4 text-slate-400">&mdash;</td>
     </>}
     <td className="p-4 min-w-[160px]">
       <div className="flex gap-2">

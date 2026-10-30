@@ -125,7 +125,7 @@ async function main() {
     assert.equal(record.clientEmail, 'entry-a@example.com');
     pass('Created At is the client master timestamp; optional values and Last Given reflect real stored data');
 
-    const orphan = await call('/clients', 'POST', { name: fixture('Unlinked'), mobile: cPhone, type: 'Govt. Official', bd: bds[0]._id });
+    const orphan = await call('/clients', 'POST', { quantity: 3, name: fixture('Unlinked'), mobile: cPhone, type: 'Govt. Official', bd: bds[0]._id });
     assert.equal(orphan.status, 201); assert.equal((await call(`/clients/${orphan.data.data._id}`, 'DELETE')).status, 200);
     const orphanRecord = (await query({ search: fixture('Unlinked') })).data[0];
     assert.equal(orphanRecord.associations.length, 0);
@@ -225,13 +225,13 @@ async function main() {
     pass('Backend and MongoDB both reject concurrent/duplicate active client-year records while retaining reverted history');
 
     const concurrentIdentity = await Promise.all([
-      call('/clients', 'POST', { name: fixture('Concurrent'), mobile: mobile(5), type: 'Govt. Official', bd: bds[0]._id }),
-      call('/clients', 'POST', { name: fixture('Concurrent'), mobile: mobile(5), type: 'Vendor', bd: bds[1]._id }),
+      call('/clients', 'POST', { quantity: 3, name: fixture('Concurrent'), mobile: mobile(5), type: 'Govt. Official', bd: bds[0]._id }),
+      call('/clients', 'POST', { quantity: 3, name: fixture('Concurrent'), mobile: mobile(5), type: 'Vendor', bd: bds[1]._id }),
     ]);
     assert.deepEqual(concurrentIdentity.map(result => result.status), [201, 201]);
     assert.equal(concurrentIdentity[0].data.data.clientId, concurrentIdentity[1].data.data.clientId);
     assert.equal(await db.collection('clients').countDocuments({ normalizedName: normalize(fixture('Concurrent')) }), 1);
-    assert.equal((await call('/clients', 'POST', { name: fixture('Invalid Phone'), mobile: 'abc123', type: 'Govt. Official', bd: bds[0]._id })).status, 400);
+    assert.equal((await call('/clients', 'POST', { quantity: 3, name: fixture('Invalid Phone'), mobile: 'abc123', type: 'Govt. Official', bd: bds[0]._id })).status, 400);
     pass('Concurrent client registrations reuse one MongoDB identity; invalid phones are rejected by the backend');
 
     await page.getByRole('combobox', { name: 'Type', exact: true }).selectOption('ALL');

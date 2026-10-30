@@ -39,7 +39,7 @@ async function main() {
   let phone = 9200000000;
   try {
     const bd = await BD.create({ name: 'Req', email: 'req@adinn.com' });
-    const newClient = async (name: string) => (await call('POST', '/clients', { name, mobile: String(++phone), type: 'Vendor', bd: String(bd._id) })).body.data.clientId as string;
+    const newClient = async (name: string) => (await call('POST', '/clients', { quantity: 3, name, mobile: String(++phone), type: 'Vendor', bd: String(bd._id) })).body.data.clientId as string;
     const give = (clientId: string, over: object = {}) => call('POST', '/distributions', { clientId, year: 2026, type: 'Vendor', bd: String(bd._id), mode: 'IN_PERSON', ...over });
     const row = async (clientId: string, occasion?: string, extra = '') => (await call('GET', `/distributions?year=2026&limit=100${occasion ? `&occasion=${encodeURIComponent(occasion)}` : ''}${extra}`)).body.data.find((r: any) => r.clientId === clientId);
 

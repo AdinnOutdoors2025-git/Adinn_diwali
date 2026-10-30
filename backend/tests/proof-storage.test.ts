@@ -49,7 +49,7 @@ async function main() {
     const bd = await BD.create({ name: 'Req', email: 'req@adinn.com' });
     // A courier distribution already at SHIPPING, ready for Delivered.
     const courier = async () => {
-      const c = await call('POST', '/clients', { name: `C${phone}`, mobile: String(++phone), type: 'Vendor', bd: String(bd._id) });
+      const c = await call('POST', '/clients', { quantity: 3, name: `C${phone}`, mobile: String(++phone), type: 'Vendor', bd: String(bd._id) });
       const d = await call('POST', '/distributions', { clientId: c.body.data.clientId, year: 2026, type: 'Vendor', bd: String(bd._id), mode: 'COURIER', address: '12 Test Street, Chennai 600001' });
       const id = d.body.data._id as string;
       for (const s of ['DISPATCH', 'SHIPPING']) assert.equal((await setStatus(id, s)).status, 200);

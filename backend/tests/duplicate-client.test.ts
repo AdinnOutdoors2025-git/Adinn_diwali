@@ -31,35 +31,35 @@ const call = async (path: string, body: object) => {
 };
 try {
   const [bd1, bd2] = await BD.create([{ name: 'BD One', email: 'one@adinn.com' }, { name: 'BD Two', email: 'two@adinn.com' }]);
-  const first = { name: 'Acme Media', mobile: '9876543210', type: 'Vendor', bd: String(bd1._id) };
+  const first = { name: 'Acme Media', mobile: '9876543210', type: 'Vendor', quantity: 3, bd: String(bd1._id) };
 
   let r = await call('/clients', first);
   assert.equal(r.status, 201); assert.equal(await Client.countDocuments(), 1); ok('new client created (201)');
 
-  r = await call('/clients', { ...first, name: 'ACME  media', mobile: '9876543210', type: 'Client', bd: String(bd2._id) });
+  r = await call('/clients', { quantity: 3, ...first, name: 'ACME  media', mobile: '9876543210', type: 'Client', bd: String(bd2._id) });
   assert.equal(r.status, 409); assert.equal(r.body.code, 'CLIENT_EXISTS');
   assert.equal(await Client.countDocuments(), 1); assert.equal(await ClientAssociation.countDocuments(), 1);
   ok('duplicate phone returns 409 CLIENT_EXISTS and changes nothing (cancel path)');
 
-  r = await call('/clients', { ...first, mobile: '9876543210', type: 'Client', bd: String(bd2._id), confirmExisting: true });
+  r = await call('/clients', { quantity: 3, ...first, mobile: '9876543210', type: 'Client', bd: String(bd2._id), confirmExisting: true });
   assert.equal(r.status, 201); assert.equal(await Client.countDocuments(), 1); assert.equal(await ClientAssociation.countDocuments(), 2);
   assert.equal(await SweetDistribution.countDocuments(), 0); ok('confirm adds association to existing client, no new client, no distribution');
 
-  r = await call('/clients', { ...first, confirmExisting: true });
+  r = await call('/clients', { quantity: 3, ...first, confirmExisting: true });
   assert.equal(r.status, 409); assert.equal(r.body.code, 'ASSOCIATION_EXISTS'); assert.equal(await ClientAssociation.countDocuments(), 2);
   ok('existing Type+BD association returns informative 409 ASSOCIATION_EXISTS');
 
-  r = await call('/clients', { name: 'Acme Media', mobile: '9000000001', type: 'Vendor', bd: String(bd1._id) });
+  r = await call('/clients', { quantity: 3, name: 'Acme Media', mobile: '9000000001', type: 'Vendor', bd: String(bd1._id) });
   assert.equal(r.status, 409); assert.equal(r.body.code, 'CLIENT_EXISTS'); assert.equal(r.body.matchedBy, 'name'); assert.equal(await Client.countDocuments(), 1);
   ok('same name with different phone offers the existing-client flow (CLIENT_EXISTS, matchedBy name)');
 
-  const racers = await Promise.all(Array.from({ length: 8 }, () => call('/clients', { name: 'Race Co', mobile: '9111111111', type: 'Govt. Official', bd: String(bd1._id) })));
+  const racers = await Promise.all(Array.from({ length: 8 }, () => call('/clients', { quantity: 3, name: 'Race Co', mobile: '9111111111', type: 'Govt. Official', bd: String(bd1._id) })));
   assert.equal(racers.filter(x => x.status === 201).length, 1);
   assert.ok(racers.every(x => [201, 409].includes(x.status)));
   assert.equal(await Client.countDocuments({ normalizedMobile: '9111111111' }), 1);
   assert.equal(await ClientAssociation.countDocuments({ type: 'Govt. Official' }), 1); ok('8 concurrent identical creates yield exactly one client + association');
 
-  const concurrentConfirm = await Promise.all(Array.from({ length: 6 }, () => call('/clients', { ...first, mobile: '9876543210', type: 'Bank Official', bd: String(bd2._id), confirmExisting: true })));
+  const concurrentConfirm = await Promise.all(Array.from({ length: 6 }, () => call('/clients', { quantity: 3, ...first, mobile: '9876543210', type: 'Bank Official', bd: String(bd2._id), confirmExisting: true })));
   assert.equal(concurrentConfirm.filter(x => x.status === 201).length, 1);
   assert.equal(await ClientAssociation.countDocuments({ type: 'Bank Official' }), 1); ok('concurrent confirms create exactly one association');
 
@@ -72,7 +72,7 @@ try {
   assert.equal(await SweetDistribution.countDocuments({ client: acme._id, isReverted: { $ne: true } }), 1);
   ok('annual rule: second distribution in same year across another Type/Requestee rejected');
 
-  r = await call('/clients', { name: 'Bad', mobile: 'abc', type: 'Vendor', bd: String(bd1._id) });
+  r = await call('/clients', { quantity: 3, name: 'Bad', mobile: 'abc', type: 'Vendor', bd: String(bd1._id) });
   assert.equal(r.status, 400); ok('invalid phone returns 400');
   const get = async (path: string) => { const res = await fetch(base + path, { headers: { Authorization: `Bearer ${token}` } }); return { status: res.status, body: await res.json() as any }; };
   const list = await get('/bds');

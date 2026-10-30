@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import * as XLSX from 'xlsx';
 import { Client } from '../models/Client.js';
 import { ClientAssociation } from '../models/ClientAssociation.js';
-import { CLIENT_TYPES, isClientType } from '../config/distribution.js';
+import { CLIENT_TYPES, isClientType, parseQuantity, MAX_DISTRIBUTION_QUANTITY } from '../config/distribution.js';
 import { BD } from '../models/BD.js';
 import { findOrCreateClient, normalizeName, normalizeMobile, isValidMobile, isTenDigitMobile, PHONE_MESSAGE } from '../utils/normalize.js';
 
@@ -138,6 +138,12 @@ export const createClient = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    const quantity = parseQuantity(req.body.quantity);
+    if (quantity === null) {
+      res.status(400).json({ success: false, message: `Quantity must be a whole number greater than 0 (up to ${MAX_DISTRIBUTION_QUANTITY}).` });
+      return;
+    }
+
     const bdExists = await BD.findById(bd);
     if (!bdExists) {
       res.status(404).json({ success: false, message: 'Selected Requestee not found in system' });
@@ -160,12 +166,12 @@ export const createClient = async (req: Request, res: Response): Promise<void> =
     let isNew = false;
     if (!match) {
       try {
-        const created = await Client.create({ name: name.trim(), normalizedName: normName, mobile: mobile.trim(), normalizedMobile: normMobile, email: trimmedEmail });
+        const created = await Client.create({ name: name.trim(), normalizedName: normName, mobile: mobile.trim(), normalizedMobile: normMobile, email: trimmedEmail, quantity });
         const association = await ClientAssociation.create({ client: created._id, type, bd });
         res.status(201).json({
           success: true,
           message: 'Client registered and associated successfully',
-          data: { _id: association._id, clientId: created._id, name: created.name, mobile: created.mobile, email: created.email, type, bd: bdExists, createdAt: association.createdAt },
+          data: { _id: association._id, clientId: created._id, name: created.name, mobile: created.mobile, email: created.email, quantity: created.quantity, type, bd: bdExists, createdAt: association.createdAt },
         });
         return;
       } catch (error: any) {
@@ -201,14 +207,19 @@ export const createClient = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    if (trimmedEmail && !client.email) { client.email = trimmedEmail; await client.save(); }
+    // An existing client keeps its stored quantity; the entered one is used only when the record has none.
+    if ((trimmedEmail && !client.email) || !client.quantity) {
+      if (trimmedEmail && !client.email) client.email = trimmedEmail;
+      if (!client.quantity) client.quantity = quantity;
+      await client.save();
+    }
 
     // 3. Add the association only (no sweet distribution is created).
     const association = await ClientAssociation.create({ client: client._id, type, bd });
     res.status(201).json({
       success: true,
       message: `Added "${type}" and ${bdExists.name} to existing client "${client.name}"`,
-      data: { _id: association._id, clientId: client._id, name: client.name, mobile: client.mobile, email: client.email, type, bd: bdExists, createdAt: association.createdAt },
+      data: { _id: association._id, clientId: client._id, name: client.name, mobile: client.mobile, email: client.email, quantity: client.quantity, type, bd: bdExists, createdAt: association.createdAt },
     });
   } catch (error: any) {
     console.error('Error creating client:', error);
@@ -307,6 +318,15 @@ export const updateClient = async (req: Request, res: Response): Promise<void> =
       await association.save();
     }
 
+    if (req.body.quantity !== undefined) {
+      const quantity = parseQuantity(req.body.quantity);
+      if (quantity === null) {
+        res.status(400).json({ success: false, message: `Quantity must be a whole number greater than 0 (up to ${MAX_DISTRIBUTION_QUANTITY}).` });
+        return;
+      }
+      client.quantity = quantity;
+    }
+
     await client.save();
 
     res.status(200).json({
@@ -318,6 +338,7 @@ export const updateClient = async (req: Request, res: Response): Promise<void> =
         name: client.name,
         mobile: client.mobile,
         email: client.email,
+        quantity: client.quantity,
         type: association.type,
         bd: association.bd,
       },

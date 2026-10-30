@@ -12,7 +12,7 @@ import { AuthRequest } from '../middleware/auth.js';
 import { getProofStorage } from '../config/proofStorage.js';
 import { FIRST_DIWALI_YEAR, isRecordableYear } from '../config/diwaliYear.js';
 import {
-  DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, DISTRIBUTION_QUANTITY, quantityState, MIN_ADDRESS_LENGTH, MAX_ADDRESS_LENGTH,
+  DELIVERY_STATUSES, DeliveryStatus, DISTRIBUTION_MODES, STATUS_FLOW, isClientType, isDistributionMode, nextStatus, quantityState, MIN_ADDRESS_LENGTH, MAX_ADDRESS_LENGTH,
 } from '../config/distribution.js';
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -76,7 +76,7 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
       const given = distributions.find(row => row.distributionYear === currentYear);
       return {
         _id: client._id, clientId: client._id, associationId: links[0]?._id || null,
-        clientName: client.name, clientMobile: client.mobile, clientEmail: client.email || '',
+        clientName: client.name, clientMobile: client.mobile, clientEmail: client.email || '', clientQuantity: client.quantity ?? null,
         associations: links.map((row: any) => ({ _id: row._id, type: row.type || null, legacyVertical: row.vertical || null, bd: row.bd })),
         type: links[0]?.type || null, bd: links[0]?.bd || null,
         createdAt: client.createdAt,
@@ -99,6 +99,57 @@ export const getDistributionRecords = async (req: Request, res: Response): Promi
   } catch (error: any) {
     console.error('Error fetching distributions:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch distribution records' });
+  }
+};
+
+// Live totals for the Home dashboard, computed in the database for one occasion and year.
+// - Total Entries: unique registered clients, whether or not anything has been distributed. Clients are not tied to an occasion, so
+//   this is every client registered by the end of the selected year, plus any client that has a distribution in that occasion and year.
+// - Delivered / Pending: the client's active (not reverted) distribution for that occasion and year. Delivered = status DELIVERED, or an
+//   older record with no status, which the app treats as given; Pending = every other stage. Reverted records are never counted.
+// - Total Quantity: the quantity saved on each of those clients (falling back to the distribution's own for older clients without one).
+export const getDistributionAnalytics = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const year = Number(req.query.year);
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) { res.status(400).json({ success: false, message: 'Valid year is required' }); return; }
+    const occasion = req.query.occasion ? await findOccasionName(req.query.occasion) : LEGACY_OCCASION;
+    if (!occasion) { res.status(400).json({ success: false, message: 'Unknown occasion' }); return; }
+    const hasDist = { $ne: [{ $type: '$dist' }, 'missing'] };
+    const isDelivered = { $eq: [{ $ifNull: ['$dist.status', 'DELIVERED'] }, 'DELIVERED'] };
+    const distQty = { $ifNull: ['$dist.quantity', 0] };
+    const [totals] = await Client.aggregate([
+      { $lookup: {
+        from: SweetDistribution.collection.name,
+        let: { id: '$_id' },
+        pipeline: [
+          { $match: { $expr: { $eq: ['$client', '$$id'] }, distributionYear: year, occasion: occasionMatch(occasion), isReverted: { $ne: true } } },
+          { $sort: { distributedAt: -1, _id: -1 } },
+          { $limit: 1 },
+          { $project: { status: 1, quantity: 1 } },
+        ],
+        as: 'dist',
+      } },
+      { $addFields: { dist: { $arrayElemAt: ['$dist', 0] } } },
+      { $match: { $or: [{ createdAt: { $lt: new Date(Date.UTC(year + 1, 0, 1)) } }, { $expr: hasDist }] } },
+      { $group: {
+        _id: null,
+        totalEntries: { $sum: 1 },
+        delivered: { $sum: { $cond: [{ $and: [hasDist, isDelivered] }, 1, 0] } },
+        pending: { $sum: { $cond: [{ $and: [hasDist, { $not: [isDelivered] }] }, 1, 0] } },
+        totalQuantity: { $sum: { $ifNull: ['$quantity', distQty] } },
+        deliveredQuantity: { $sum: { $cond: [{ $and: [hasDist, isDelivered] }, distQty, 0] } },
+        pendingQuantity: { $sum: { $cond: [{ $and: [hasDist, { $not: [isDelivered] }] }, distQty, 0] } },
+      } },
+    ]);
+    const t = totals || { totalEntries: 0, delivered: 0, pending: 0, totalQuantity: 0, deliveredQuantity: 0, pendingQuantity: 0 };
+    res.status(200).json({ success: true, data: {
+      year, occasion, totalEntries: t.totalEntries, delivered: t.delivered, pending: t.pending,
+      totalQuantity: t.totalQuantity, deliveredQuantity: t.deliveredQuantity, pendingQuantity: t.pendingQuantity,
+      generatedAt: new Date().toISOString(),
+    } });
+  } catch (error: any) {
+    console.error('Error computing distribution analytics:', error);
+    res.status(500).json({ success: false, message: 'Failed to load analytics' });
   }
 };
 
@@ -151,6 +202,13 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
+    // The quantity is the one saved on the client; it is never taken from this request.
+    const quantity = client.quantity;
+    if (!quantity || quantity < 1) {
+      res.status(400).json({ success: false, message: `"${client.name}" has no quantity yet. Edit the client and set a quantity above 0 before recording a distribution.` });
+      return;
+    }
+
     const bdExists = await BD.findById(bd);
     if (!bdExists) {
       res.status(404).json({ success: false, message: 'Requestee not found' });
@@ -195,7 +253,7 @@ export const createDistribution = async (req: AuthRequest, res: Response): Promi
       occasion,
       type,
       bd,
-      quantity: DISTRIBUTION_QUANTITY,
+      quantity,
       mode,
       ...(mode === 'COURIER' ? { address } : {}),
       status: 'INITIATE',

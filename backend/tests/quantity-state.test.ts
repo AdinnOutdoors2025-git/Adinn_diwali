@@ -25,12 +25,12 @@ const rows = [
   row('6', { quantity: 5 }), row('7', null), row('8', null),
 ];
 const t = quantityTotals(rows);
-assert.equal(t.given.quantity, 15); assert.equal(t.inProgress.quantity, 15); assert.equal(t.pending.quantity, 10); assert.equal(t.total, 40);
+assert.equal(t.given.quantity, 15); assert.equal(t.inProgress.quantity, 15); assert.equal(t.pending.quantity, 0); assert.equal(t.total, 30);
 assert.equal(t.total - t.given.quantity - t.inProgress.quantity, t.pending.quantity);
-assert.equal(t.completion, 0.375); ok('totals: Given=Delivered+legacy, In Progress=non-delivered, Pending=Total-Given-InProgress, Completion=Given/Total');
+assert.equal(t.completion, 0.5); ok('totals: Given=Delivered+legacy, In Progress=non-delivered, Pending=Total-Given-InProgress (clients with nothing saved count 0, not an assumed quantity), Completion=Given/Total');
 
 const moved = quantityTotals(rows.map(r => r._id === '1' ? row('1', { mode: 'COURIER', status: 'DELIVERED' }) : r));
-assert.equal(moved.given.quantity, 20); assert.equal(moved.inProgress.quantity, 10); assert.equal(moved.total, 40); ok('status -> Delivered moves quantity without double counting');
+assert.equal(moved.given.quantity, 20); assert.equal(moved.inProgress.quantity, 10); assert.equal(moved.total, 30); ok('status -> Delivered moves quantity without double counting');
 
 async function main() {
 const blob = buildEntryWorkbook(rows, [{ _id: 'bd1', name: 'B', email: 'b@x.com' } as any], { year: 2026, type: 'ALL', bd: 'ALL', status: 'ALL', mode: 'ALL', deliveryStatus: 'ALL', search: '' });
@@ -40,7 +40,7 @@ const sheet = (name: string) => XLSX.utils.sheet_to_json<any[]>(book.Sheets[name
 const summary = sheet('Summary').map(r => r.join('|')).join('\n');
 for (const needle of ['In Progress Quantity', 'COURIER', 'IN-PERSON', 'Delivered / Given', 'NOT GIVEN', 'LEGACY (NO MODE)', 'Not Given (no distribution saved)']) assert.ok(summary.toUpperCase().includes(needle.toUpperCase()), needle);
 const find = (label: string) => sheet('Summary').find(r => String(r[0]).trim() === label)!;
-assert.deepEqual(find('Given').slice(1, 3), [3, 15]); assert.deepEqual(find('In Progress').slice(1, 3), [3, 15]); assert.deepEqual(find('Not Given').slice(1, 3), [2, 10]);
+assert.deepEqual(find('Given').slice(1, 3), [3, 15]); assert.deepEqual(find('In Progress').slice(1, 3), [3, 15]); assert.deepEqual(find('Not Given').slice(1, 3), [2, 0]);
 const details = sheet('Distribution Details'); const statusCol = details[0].indexOf('Distribution Status');
 assert.deepEqual(details.slice(1).map(r => r[statusCol]), ['In Progress', 'In Progress', 'Given', 'In Progress', 'Given', 'Given', 'Not Given', 'Not Given']);
 const types = sheet('Type Analytics'); assert.deepEqual(types[0].slice(0, 5), ['Type', 'Eligible clients/vendors', 'Given', 'In Progress', 'Not Given']);

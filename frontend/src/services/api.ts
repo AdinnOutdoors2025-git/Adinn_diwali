@@ -1,4 +1,4 @@
-import { BD, ClientRecord, DistributionRow, Occasion, User } from '../types';
+import { BD, ClientRecord, DistributionAnalytics, DistributionRow, Occasion, User } from '../types';
 import type { ClientType, DeliveryStatus, DistributionMode } from '../config/distribution';
 
 const API_BASE_URL = '/api';
@@ -155,7 +155,7 @@ export const api = {
     }>(res);
   },
 
-  async createClient(data: { type: ClientType; bd: string; name: string; mobile: string; email?: string; confirmExisting?: boolean }) {
+  async createClient(data: { type: ClientType; bd: string; name: string; mobile: string; email?: string; quantity: number; confirmExisting?: boolean }) {
     const res = await fetch(`${API_BASE_URL}/clients`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -164,7 +164,7 @@ export const api = {
     return handleResponse<{ success: boolean; message: string; data: ClientRecord }>(res);
   },
 
-  async updateClient(id: string, data: { name?: string; mobile?: string; email?: string; type?: ClientType }) {
+  async updateClient(id: string, data: { name?: string; mobile?: string; email?: string; quantity?: number; type?: ClientType }) {
     const res = await fetch(`${API_BASE_URL}/clients/${id}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
@@ -206,6 +206,12 @@ export const api = {
   },
 
   // Distributions (Entry Page: Annual Sweet Distribution Tracking)
+  async getDistributionAnalytics(year: number, occasion: string, signal?: AbortSignal) {
+    const query = new URLSearchParams({ year: String(year), occasion });
+    const res = await fetch(`${API_BASE_URL}/distributions/analytics?${query}`, { headers: getAuthHeaders(), signal });
+    return handleResponse<{ success: boolean; data: DistributionAnalytics }>(res);
+  },
+
   async getDistributions(params: {
     year: number;
     occasion?: string;

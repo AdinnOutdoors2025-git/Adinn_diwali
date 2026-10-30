@@ -54,7 +54,7 @@ async function main() {
     const imported = await call('/clients/bulk-import', 'POST', { type: 'Govt. Official', bd: bds[0]._id, records });
     assert.equal(imported.summary.successful, 101);
     const first = await db.collection('clients').findOne({ normalizedName: records[0].name.toLowerCase() });
-    const linked = await call('/clients', 'POST', { ...records[0], type: 'Vendor', bd: bds[1]._id });
+    const linked = await call('/clients', 'POST', { quantity: 3, ...records[0], type: 'Vendor', bd: bds[1]._id });
     assert.equal(linked.data.clientId, String(first._id));
     for (const year of [2026, 2027]) await call('/distributions', 'POST', { clientId: String(first._id), year, type: 'Govt. Official', bd: bds[0]._id, quantity: 1, mode: 'IN_PERSON' });
     const phase = await snapshot();

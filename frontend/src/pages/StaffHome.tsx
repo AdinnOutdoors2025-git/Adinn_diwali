@@ -2,6 +2,7 @@ import { Logo } from '../components/Logo';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { HomeAnalytics } from '../components/HomeAnalytics';
 import { UserPlus, Sparkles, ArrowRight, Layers, Gift } from 'lucide-react';
 
 export const StaffHome: React.FC = () => {
@@ -46,6 +47,8 @@ export const StaffHome: React.FC = () => {
           <Logo onDark className="w-full h-auto" />
         </div>
       </div>
+
+      <HomeAnalytics />
 
       {/* Quick Action Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

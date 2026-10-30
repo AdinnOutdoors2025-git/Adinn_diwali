@@ -1,5 +1,5 @@
 // Run: npx tsx tests/delivery-workflow.test.ts   (in-memory MongoDB only; touches no real data)
-// Covers Type, the fixed Distribution Quantity of 5 (incl. concurrency), Mode, the Courier and
+// Covers Type, the user-chosen Distribution Quantity (incl. concurrency), Mode, the Courier and
 // In-person status workflows, delivery-proof rules, filters, persistence and legacy-record handling.
 import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
@@ -10,7 +10,7 @@ import clientRoutes from '../src/routes/clientRoutes.js';
 import distributionRoutes from '../src/routes/distributionRoutes.js';
 import bdRoutes from '../src/routes/bdRoutes.js';
 import { generateToken } from '../src/config/jwt.js';
-import { MAX_PROOF_BYTES, DISTRIBUTION_QUANTITY } from '../src/config/distribution.js';
+import { MAX_PROOF_BYTES, MAX_DISTRIBUTION_QUANTITY } from '../src/config/distribution.js';
 import { Client, ensureClientIndexes } from '../src/models/Client.js';
 import { ClientAssociation, ensureAssociationIndexes } from '../src/models/ClientAssociation.js';
 import { SweetDistribution, ensureDistributionIndexes } from '../src/models/SweetDistribution.js';
@@ -49,7 +49,7 @@ async function main() {
   };
   let phone = 9000000000;
   const newClient = async (name: string, over: object = {}) => {
-    const r = await call('POST', '/clients', { name, mobile: String(++phone), type: 'Vendor', bd: String(bd1._id), ...over });
+    const r = await call('POST', '/clients', { quantity: 3, name, mobile: String(++phone), type: 'Vendor', bd: String(bd1._id), ...over });
     assert.equal(r.status, 201, JSON.stringify(r.body)); return r.body.data.clientId as string;
   };
   // Courier distributions need an address; tests that do not care get a valid one unless they pass their own.
@@ -62,43 +62,52 @@ async function main() {
 
     // ---- Type ----
     const types = ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official'];
-    for (const type of types) assert.equal((await call('POST', '/clients', { name: `Type ${type}`, mobile: String(++phone), type, bd: String(bd1._id) })).status, 201);
+    for (const type of types) assert.equal((await call('POST', '/clients', { quantity: 3, name: `Type ${type}`, mobile: String(++phone), type, bd: String(bd1._id) })).status, 201);
     ok('all five Types (Vendor, Client, Govt. Official, OOH Landlords, Bank Official) are accepted');
-    for (const type of ['Roadshow', '', undefined, 'vendor']) assert.equal((await call('POST', '/clients', { name: 'Bad Type', mobile: String(++phone), type, bd: String(bd1._id) })).status, 400);
+    for (const type of ['Roadshow', '', undefined, 'vendor']) assert.equal((await call('POST', '/clients', { quantity: 3, name: 'Bad Type', mobile: String(++phone), type, bd: String(bd1._id) })).status, 400);
     ok('legacy verticals, blank, missing and wrong-case Types are rejected');
     assert.equal(await Client.countDocuments({ name: 'Bad Type' }), 0); ok('a rejected Type creates no client');
 
-    // ---- Distribution quantity is fixed at 5 ----
-    assert.equal(DISTRIBUTION_QUANTITY, 5);
-    const plain = await call('POST', '/clients', { name: 'No Qty', mobile: String(++phone), type: 'Client', bd: String(bd1._id) });
+    // ---- Distribution quantity is chosen by the user and must be above 0 ----
+    const plain = await call('POST', '/clients', { quantity: 3, name: 'No Qty', mobile: String(++phone), type: 'Client', bd: String(bd1._id) });
     assert.equal(plain.status, 201); assert.ok(!('allowedQuantity' in plain.body.data)); ok('a client no longer carries an Allowed Quantity');
     const listed = await call('GET', `/clients?type=Vendor&bd=${bd1._id}&limit=100`);
     assert.ok(listed.body.data.every((c: any) => c.type === 'Vendor' && !('allowedQuantity' in c))); ok('client list returns type and no allowedQuantity');
-    const fixed = await newClient('Fixed Co');
-    const fixedGive = await give(fixed); assert.equal(fixedGive.status, 201, JSON.stringify(fixedGive.body));
-    assert.equal(fixedGive.body.data.quantity, 5); assert.equal((await SweetDistribution.findById(fixedGive.body.data._id))!.quantity, 5); ok('a distribution without a quantity is stored as exactly 5');
-    const ignoring = await newClient('Ignores Qty Co');
-    const tampered = await give(ignoring, { quantity: 99 }); assert.equal(tampered.status, 201); assert.equal(tampered.body.data.quantity, 5);
-    const tampered2 = await newClient('Ignores Qty Co 2'); assert.equal((await give(tampered2, { quantity: 1 })).body.data.quantity, 5);
-    const tampered3 = await newClient('Ignores Qty Co 3'); assert.equal((await give(tampered3, { quantity: -4, allowedQuantity: 50 })).body.data.quantity, 5);
-    ok('a quantity sent by the browser (higher, lower or invalid) is ignored; the server always stores 5');
-    const listedRow = await row(fixed); assert.equal(listedRow.currentYearDistribution.quantity, 5); assert.ok(!('allowedQuantity' in listedRow)); ok('the Entry list reports quantity 5 and no allowed quantity');
+    // Quantity is entered when the client is added: required, a whole number above 0, saved on the client.
+    for (const bad of [undefined, 0, -4, 1.5, '3', null, MAX_DISTRIBUTION_QUANTITY + 1]) {
+      const rejected = await call('POST', '/clients', { name: 'Bad Qty Co', mobile: String(++phone), type: 'Vendor', bd: String(bd1._id), quantity: bad });
+      assert.equal(rejected.status, 400, `quantity ${String(bad)}`); assert.match(rejected.body.message, /Quantity must be a whole number greater than 0/);
+    }
+    assert.equal(await Client.countDocuments({ name: 'Bad Qty Co' }), 0); ok('adding a client with a missing, zero, negative, fractional, text or oversized quantity is rejected and nothing is saved');
+    const fixed = await newClient('Chosen Qty Co', { quantity: 7 });
+    assert.equal((await Client.findById(fixed))!.quantity, 7); ok('the entered quantity is saved on the client');
+    const fixedGive = await give(fixed, { quantity: 99 }); assert.equal(fixedGive.status, 201, JSON.stringify(fixedGive.body));
+    assert.equal(fixedGive.body.data.quantity, 7); assert.equal((await SweetDistribution.findById(fixedGive.body.data._id))!.quantity, 7); ok('the distribution uses the saved client quantity; a quantity in the distribution request is ignored');
+    const listedRow = await row(fixed); assert.equal(listedRow.clientQuantity, 7); assert.equal(listedRow.currentYearDistribution.quantity, 7); assert.ok(!('allowedQuantity' in listedRow)); ok('the Entry list reports the saved client quantity');
+    const noQty = await mongoose.connection.collection('clients').insertOne({ name: 'No Qty Legacy', normalizedName: 'no qty legacy', mobile: '8000000077', normalizedMobile: '8000000077', email: '', createdAt: new Date(), updatedAt: new Date() });
+    const noQtyAssoc = await mongoose.connection.collection('clientassociations').insertOne({ client: noQty.insertedId, type: 'Vendor', bd: bd1._id, createdAt: new Date(), updatedAt: new Date() });
+    assert.equal((await row(String(noQty.insertedId))).clientQuantity, null);
+    const blocked = await give(String(noQty.insertedId)); assert.equal(blocked.status, 400); assert.match(blocked.body.message, /no quantity yet/); assert.equal(await SweetDistribution.countDocuments({ client: noQty.insertedId }), 0);
+    ok('an older client with no quantity is left as-is (shown blank) and cannot be given a distribution until a quantity is set');
+    assert.equal((await call('PUT', `/clients/${noQtyAssoc.insertedId}`, { quantity: 0 })).status, 400); assert.equal((await call('PUT', `/clients/${noQtyAssoc.insertedId}`, { name: 'No Qty Legacy 2' })).status, 200);
+    assert.equal((await Client.findById(noQty.insertedId))!.quantity, undefined); ok('editing other fields never invents a quantity; an invalid quantity is rejected');
+    assert.equal((await call('PUT', `/clients/${noQtyAssoc.insertedId}`, { quantity: 4 })).status, 200); assert.equal((await give(String(noQty.insertedId))).body.data.quantity, 4); ok('setting a quantity on an older client lets its distribution use it');
 
     // ---- Concurrency ----
     const raced = await newClient('Race Qty Co');
-    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => give(raced, { quantity: i, mode: i % 3 ? 'COURIER' : 'IN_PERSON' })));
+    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => give(raced, { mode: i % 3 ? 'COURIER' : 'IN_PERSON' })));
     assert.equal(results.filter(r => r.status === 201).length, 1, JSON.stringify(results.map(r => r.status)));
     assert.ok(results.every(r => [201, 409].includes(r.status)));
     const stored = await SweetDistribution.find({ client: raced, isReverted: false }).lean();
-    assert.equal(stored.length, 1); assert.equal(stored[0].quantity, 5); ok('12 concurrent distributions for one client record exactly one, with quantity 5');
+    assert.equal(stored.length, 1); assert.equal(stored[0].quantity, 3); ok('12 concurrent distributions for one client record exactly one, with its own quantity');
 
     // ---- Client edits cannot change the distribution quantity ----
     const edit = await newClient('Edit Qty Co');
     const editAssoc = (await ClientAssociation.findOne({ client: edit }))!;
     assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { allowedQuantity: 1 })).status, 200);
-    const editGive = await give(edit); assert.equal(editGive.body.data.quantity, 5);
+    const editGive = await give(edit); assert.equal(editGive.body.data.quantity, 3);
     assert.equal((await call('PUT', `/clients/${editAssoc._id}`, { allowedQuantity: 1, name: 'Edit Qty Co Renamed' })).status, 200);
-    assert.equal((await SweetDistribution.findById(editGive.body.data._id))!.quantity, 5); ok('editing a client (even sending an old allowedQuantity) never blocks or changes a distribution');
+    assert.equal((await SweetDistribution.findById(editGive.body.data._id))!.quantity, 3); ok('editing a client (even sending an old allowedQuantity) never blocks or changes a distribution');
     assert.equal((await setStatus(editGive.body.data._id, 'DELIVERED')).status, 200);
 
     // ---- Mode ----
@@ -248,6 +257,9 @@ async function main() {
     assert.ok(byRequestee.body.data.length > 0); ok('search by Requestee email still matches');
     const bdNameHit = await call('GET', '/distributions?year=2026&search=Requestee%20Two&limit=100');
     assert.equal(bdNameHit.body.data.length, 0); ok('search by another Requestee name matches only their clients');
+    const linkQty = await call('POST', '/clients', { name: 'Chosen Qty Co', mobile: '9999999999', type: 'Client', bd: String(bd2._id), quantity: 50, confirmExisting: true });
+    assert.equal(linkQty.status, 201, JSON.stringify(linkQty.body)); assert.equal((await Client.findById(fixed))!.quantity, 7); ok('linking an existing client keeps its saved quantity');
+
 
     // ---- Legacy records created before Type / Quantity / Mode existed ----
     const legacyClient = await mongoose.connection.collection('clients').insertOne({ name: 'Legacy Co', normalizedName: 'legacy co', mobile: '8000000001', normalizedMobile: '8000000001', email: '', createdAt: new Date(), updatedAt: new Date() });
@@ -267,13 +279,13 @@ async function main() {
     assert.equal((await setStatus(String(legacyDist.insertedId), 'DELIVERED')).status, 409); ok('a legacy distribution has no status workflow and cannot be advanced');
     assert.equal((await call('POST', '/distributions', { clientId: String(legacyClient.insertedId), year: 2027, type: 'Vendor', bd: String(bd1._id), mode: 'IN_PERSON' })).status, 400); ok('distribution requires an association with a Type; legacy links must be assigned one first');
     assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Nope' })).status, 400);
-    assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Govt. Official' })).status, 200);
+    assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Govt. Official', quantity: 2 })).status, 200);
     assert.equal((await ClientAssociation.findById(legacyAssoc.insertedId))!.type, 'Govt. Official');
     assert.equal((await call('POST', '/distributions', { clientId: String(legacyClient.insertedId), year: 2027, type: 'Govt. Official', bd: String(bd1._id), mode: 'COURIER', address: '12 Test Street, Chennai 600001' })).status, 201); ok('a legacy link can be assigned a Type, after which it works with the new workflow');
     assert.equal((await call('PUT', `/clients/${legacyAssoc.insertedId}`, { type: 'Client' })).status, 200);
     assert.equal((await ClientAssociation.findById(legacyAssoc.insertedId))!.type, 'Govt. Official'); ok('an assigned Type is not silently changed by edits');
     // Same client may hold several Types under one Requestee, and duplicates are blocked.
-    const dup = await call('POST', '/clients', { name: 'Legacy Co', mobile: '8000000001', type: 'Govt. Official', bd: String(bd1._id), confirmExisting: true });
+    const dup = await call('POST', '/clients', { quantity: 3, name: 'Legacy Co', mobile: '8000000001', type: 'Govt. Official', bd: String(bd1._id), confirmExisting: true });
     assert.equal(dup.status, 409); assert.equal(dup.body.code, 'ASSOCIATION_EXISTS'); ok('duplicate Type + Requestee association is still prevented');
 
     // ---- Inline edit / create payloads exactly as the Entry page sends them (Type, never Vertical) ----
@@ -288,9 +300,9 @@ async function main() {
     edited = await call('PUT', `/clients/${inlineAssoc._id}`, { name: 'Inline Co Renamed', mobile: '7000000001', email: '' });
     assert.equal(edited.status, 200);
     assert.equal((await setStatus(inlineGive.body.data._id, 'DISPATCH')).status, 200); ok('inline edit does not disturb an in-progress delivery workflow');
-    const linkNew = await call('POST', '/clients', { name: 'Inline Co Renamed', mobile: '7000000001', email: '', type: 'Bank Official', bd: String(bd2._id), confirmExisting: true });
+    const linkNew = await call('POST', '/clients', { quantity: 3, name: 'Inline Co Renamed', mobile: '7000000001', email: '', type: 'Bank Official', bd: String(bd2._id), confirmExisting: true });
     assert.equal(linkNew.status, 201, JSON.stringify(linkNew.body)); ok('link-association payload (type + requestee) is accepted');
-    const noType = await call('POST', '/clients', { name: 'No Type Co', mobile: String(++phone), vertical: 'Roadshow', bd: String(bd1._id) });
+    const noType = await call('POST', '/clients', { quantity: 3, name: 'No Type Co', mobile: String(++phone), vertical: 'Roadshow', bd: String(bd1._id) });
     assert.equal(noType.status, 400); assert.match(noType.body.message, /Valid Type is required/); assert.ok(!/vertical/i.test(noType.body.message)); ok('a legacy "vertical" payload is rejected with a Type message');
     const fs = await import('node:fs'); const path = await import('node:path');
     const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]);
@@ -331,11 +343,11 @@ async function main() {
 
     // ---- Phone numbers: exactly 10 digits, numbers only ----
     for (const bad of ['987654321', '98765432100', '+919876543210', '98765 43210', '98765-43210', '98765abc10', '(987)6543210', '', '          ', 12345678901, null]) {
-      const r = await call('POST', '/clients', { name: 'Phone Bad', mobile: bad, type: 'Client', bd: String(bd1._id) });
+      const r = await call('POST', '/clients', { quantity: 3, name: 'Phone Bad', mobile: bad, type: 'Client', bd: String(bd1._id) });
       assert.equal(r.status, 400, `phone ${JSON.stringify(bad)}`); assert.match(r.body.message, /exactly 10 digits|10 digits/);
     }
     assert.equal(await Client.countDocuments({ name: 'Phone Bad' }), 0);
-    assert.equal((await call('POST', '/clients', { name: 'Phone Good', mobile: '9812345670', type: 'Client', bd: String(bd1._id) })).status, 201); ok('create accepts exactly 10 digits and rejects short, long, +91, spaces, dashes, letters, blank and non-string numbers');
+    assert.equal((await call('POST', '/clients', { quantity: 3, name: 'Phone Good', mobile: '9812345670', type: 'Client', bd: String(bd1._id) })).status, 201); ok('create accepts exactly 10 digits and rejects short, long, +91, spaces, dashes, letters, blank and non-string numbers');
     const phoneAssoc = (await ClientAssociation.findOne({ client: (await Client.findOne({ name: 'Phone Good' }))!._id }))!;
     for (const bad of ['98123456', '+919812345671', '98123 45671', 'abcdefghij']) assert.equal((await call('PUT', `/clients/${phoneAssoc._id}`, { mobile: bad })).status, 400, bad);
     assert.equal((await call('PUT', `/clients/${phoneAssoc._id}`, { mobile: '9812345671' })).status, 200); assert.equal((await Client.findOne({ name: 'Phone Good' }))!.mobile, '9812345671'); ok('editing a phone number enforces the same rule');
@@ -363,7 +375,7 @@ async function main() {
     const same = await Promise.all(Array.from({ length: 8 }, () => call('POST', '/bds', { name: 'Race Requestee', email: 'race.requestee@adinn.co.in' })));
     assert.equal(same.filter(r => r.status === 201).length, 1); assert.ok(same.every(r => [201, 409].includes(r.status))); assert.equal(await BD.countDocuments({ email: 'race.requestee@adinn.co.in' }), 1); ok('8 concurrent identical Requestee saves create exactly one');
     const before2 = { assoc: await ClientAssociation.countDocuments(), dists: await SweetDistribution.countDocuments(), clients: await Client.countDocuments() };
-    const meeraClient = await call('POST', '/clients', { name: 'Meera Co', mobile: String(++phone), type: 'Client', bd: created.body.data._id });
+    const meeraClient = await call('POST', '/clients', { quantity: 3, name: 'Meera Co', mobile: String(++phone), type: 'Client', bd: created.body.data._id });
     assert.equal(meeraClient.status, 201); assert.equal(String(meeraClient.body.data.bd._id), created.body.data._id);
     assert.equal(await ClientAssociation.countDocuments(), before2.assoc + 1); assert.equal(await SweetDistribution.countDocuments(), before2.dists); assert.equal(await Client.countDocuments(), before2.clients + 1);
     assert.equal((await give(meeraClient.body.data.clientId, { bd: created.body.data._id, type: 'Client', mode: 'IN_PERSON' })).status, 201); ok('a newly added Requestee can be linked to a client and used for a distribution; existing associations are untouched');

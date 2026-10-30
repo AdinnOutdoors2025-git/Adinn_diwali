@@ -3,7 +3,7 @@ import { Plus, Search, RefreshCw, Upload, Download, Gift, RotateCcw, Paperclip, 
 import { buildEntryWorkbook } from '../utils/entryWorkbook';
 import { api, ApiError } from '../services/api';
 import { BD, DistributionRow, Occasion, TYPE_OPTIONS, ClientType } from '../types';
-import { DISTRIBUTION_QUANTITY, DeliveryStatus, DistributionMode, MAX_ADDRESS_LENGTH, MAX_PROOF_MB, MIN_ADDRESS_LENGTH, MODE_LABEL, MODE_OPTIONS, STATUS_FLOW, STATUS_LABEL } from '../config/distribution';
+import { DeliveryStatus, DistributionMode, MAX_ADDRESS_LENGTH, MAX_PROOF_MB, MIN_ADDRESS_LENGTH, MODE_LABEL, MODE_OPTIONS, STATUS_FLOW, STATUS_LABEL } from '../config/distribution';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { YearPicker } from '../components/YearPicker';
 import { AddRequesteeModal } from '../components/AddRequesteeModal';
@@ -15,6 +15,7 @@ import { DEFAULT_YEAR, YEAR_OPTIONS } from '../config/diwaliYear';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../context/ToastContext';
 import { ExcelImportModal } from '../components/ExcelImportModal';
+import { notifyDistributionsChanged } from '../utils/distributionEvents';
 
 const dateLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '\u2014';
 const control = 'w-full px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20';
@@ -158,13 +159,13 @@ export const DistributionEntry: React.FC = () => {
   const renderDraft = (draft: ClientDraft) => <InlineClientRow key={draft.key} draft={draft} distributionBDs={bds} bdState={bdState} onChange={changes => changeDraft(draft.key, changes)} onCreateRequestee={term => setAddRequestee({ term, draftKey: draft.key })}
     onSave={() => saveClient(draft)} onCancel={() => setDrafts(rows => rows.filter(row => row.key !== draft.key))} />;
   const draftKey = () => `client-${++nextDraft.current}`;
-  const addClient = () => setDrafts(rows => [...rows, { key: draftKey(), name: '', mobile: '', email: '', type: type === 'ALL' ? '' : type, bd: bd === 'ALL' ? '' : bd,
+  const addClient = () => setDrafts(rows => [...rows, { key: draftKey(), name: '', mobile: '', email: '', type: type === 'ALL' ? '' : type, bd: bd === 'ALL' ? '' : bd, quantity: 0,
     saving: false, error: '' }]);
   // Edits a row in place: its draft replaces the row until it is saved or cancelled.
   const editClient = (row: DistributionRow) => {
     const associationId = row.associationId;
     if (!associationId || drafts.some(draft => draft.associationId === associationId)) return;
-    setDrafts(rows => [...rows, { key: draftKey(), name: row.clientName, mobile: row.clientMobile, originalMobile: row.clientMobile, email: row.clientEmail,
+    setDrafts(rows => [...rows, { key: draftKey(), name: row.clientName, mobile: row.clientMobile, originalMobile: row.clientMobile, email: row.clientEmail, quantity: row.clientQuantity ?? 0, hadQuantity: !!row.clientQuantity,
       type: row.type || '', bd: row.bd?._id || '', typeLocked: !!row.type,
       associationId, saving: false, error: '' }]);
   };
@@ -176,14 +177,15 @@ export const DistributionEntry: React.FC = () => {
       : !(/^\d{10}$/.test(draft.mobile) || untouchedLegacy) ? 'Phone number must be exactly 10 digits (numbers only).'
       : draft.email.trim() && !/^\S+@\S+\.\S+$/.test(draft.email.trim()) ? 'Enter a valid email or leave it empty.'
       : !draft.type || !draft.bd ? 'Select a Type and Requestee Name.'
+      : draft.quantity <= 0 && (!draft.associationId || draft.hadQuantity) ? 'Quantity must be greater than 0. Use + to set how many sweets this client gets.'
       : '';
     if (validation) { changeDraft(draft.key, { error: validation }); return; }
     savingRows.current.add(draft.key); changeDraft(draft.key, { saving: true, error: '' });
     try {
       const fields = { name: draft.name.trim(), mobile: draft.mobile.trim(), email: draft.email.trim() };
       const result = draft.associationId
-        ? await api.updateClient(draft.associationId, { ...fields, ...(draft.typeLocked ? {} : { type: draft.type as ClientType }) })
-        : await api.createClient({ ...fields, type: draft.type as ClientType, bd: draft.bd!, ...(confirmExisting ? { confirmExisting: true } : {}) });
+        ? await api.updateClient(draft.associationId, { ...fields, ...(draft.quantity > 0 ? { quantity: draft.quantity } : {}), ...(draft.typeLocked ? {} : { type: draft.type as ClientType }) })
+        : await api.createClient({ ...fields, type: draft.type as ClientType, bd: draft.bd!, quantity: draft.quantity, ...(confirmExisting ? { confirmExisting: true } : {}) });
       setDrafts(rows => rows.filter(row => row.key !== draft.key));
       success(result.message); await load();
     } catch (error: any) {
@@ -216,7 +218,7 @@ export const DistributionEntry: React.FC = () => {
       const result = action === 'give'
         ? await api.createDistribution({ clientId: target.clientId, year: actionYear, occasion, type: link!.type!, bd: link!.bd!._id, mode: distMode as DistributionMode, ...(distMode === 'COURIER' ? { address: cleanAddress } : {}), notes: notes.trim() })
         : await api.revertDistribution(target.currentYearDistribution!._id, notes.trim());
-      success(result.message); setTarget(null); await load();
+      success(result.message); setTarget(null); notifyDistributionsChanged(); await load();
     } catch (error: any) { setActionError(error.message || 'Unable to save distribution.'); }
     finally { actionPending.current = false; setSubmitting(false); }
   };
@@ -228,7 +230,7 @@ export const DistributionEntry: React.FC = () => {
     statusPending.current = true; setStatusBusy(current._id); setPageError('');
     try {
       const result = await api.updateDeliveryStatus(current._id, next, proof);
-      success(result.message); setProofTarget(null); setProofFile(null); await load();
+      success(result.message); setProofTarget(null); setProofFile(null); notifyDistributionsChanged(); await load();
     } catch (error: any) {
       if (proofTarget) setProofError(error.message || 'Unable to update status.'); else setPageError(error.message || 'Unable to update status.');
       await load();
@@ -349,7 +351,7 @@ export const DistributionEntry: React.FC = () => {
                 <td className="px-4 py-4">{row.associations.length ? row.associations.map(link => <div key={link._id} className="min-h-6 whitespace-nowrap">{link.type || <span className="text-slate-400" title={link.legacyVertical ? `Previous vertical: ${link.legacyVertical}` : undefined}>Unassigned{link.legacyVertical ? ` (was ${link.legacyVertical})` : ''}</span>}</div>) : '\u2014'}</td>
                 <td className="px-4 py-4">{row.associations.length ? row.associations.map(link => <div key={link._id} className="min-h-6 whitespace-nowrap">{link.bd?.name || '\u2014'}</div>) : '\u2014'}</td>
                 <td className="px-4 py-4 text-slate-500">{row.associations.length ? row.associations.map(link => <div key={link._id} className="min-h-6">{link.bd?.email || '\u2014'}</div>) : '\u2014'}</td>
-                <td className="px-4 py-4 whitespace-nowrap font-semibold text-slate-700" data-quantity>{row.currentYearDistribution?.quantity ?? DISTRIBUTION_QUANTITY}</td>
+                <td className="px-4 py-4 whitespace-nowrap font-semibold text-slate-700" data-quantity>{row.currentYearDistribution?.quantity ?? row.clientQuantity ?? '—'}</td>
                 <td className="px-4 py-4 whitespace-nowrap text-slate-500">{dateLabel(row.createdAt)}</td>
                 <td className="px-4 py-4 whitespace-nowrap"><span className="font-semibold text-slate-700">{row.lastGiven || '\u2014'}</span>
                   {row.lastGivenDate && <div className="text-xs text-slate-400 mt-1.5">{dateLabel(row.lastGivenDate)}</div>}

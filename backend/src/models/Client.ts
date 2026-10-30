@@ -6,6 +6,8 @@ export interface IClient extends Document {
   mobile: string;
   normalizedMobile: string;
   email?: string;
+  /** Sweets to give this client; entered when the client is added. Absent on records created before it existed. */
+  quantity?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +43,7 @@ const ClientSchema = new Schema<IClient>(
       lowercase: true,
       default: '',
     },
+    quantity: { type: Number, min: 1, validate: { validator: Number.isInteger, message: 'Quantity must be a whole number' } },
   },
   {
     timestamps: true,

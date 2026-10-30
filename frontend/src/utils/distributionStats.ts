@@ -1,5 +1,4 @@
 import { DistributionRow } from '../types';
-import { DISTRIBUTION_QUANTITY } from '../config/distribution';
 
 // Given = Delivered (or legacy, untracked) records; In Progress = saved but not yet Delivered; Not Given = nothing saved.
 export type QuantityBucket = 'GIVEN' | 'IN_PROGRESS' | 'NOT_GIVEN';
@@ -9,7 +8,7 @@ export const bucketOf = (row: DistributionRow): QuantityBucket => {
   if (row.isEligible || !dist) return 'NOT_GIVEN';
   return dist.quantityState ?? (!dist.status || dist.status === 'DELIVERED' ? 'GIVEN' : 'IN_PROGRESS');
 };
-export const quantityOf = (row: DistributionRow): number => row.currentYearDistribution?.quantity ?? DISTRIBUTION_QUANTITY;
+export const quantityOf = (row: DistributionRow): number => row.currentYearDistribution?.quantity ?? 0; // records without a stored quantity (legacy, or nothing saved yet) count as 0, never an assumed value
 
 export interface Tally { clients: number; quantity: number }
 export const tally = (rows: DistributionRow[]): Tally => ({ clients: rows.length, quantity: rows.reduce((sum, row) => sum + quantityOf(row), 0) });

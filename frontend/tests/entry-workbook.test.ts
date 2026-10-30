@@ -41,7 +41,7 @@ async function main() {
   const byName = Object.fromEntries(details.map(row => [row['Client/Vendor Name'] as string, row]));
   assert.equal(byName['Courier Co'].Type, 'Vendor'); assert.equal(byName['Courier Co']['Requestee Name'], 'Asha Requestee');
   assert.equal(byName['Courier Co']['Distribution Quantity'], 2);
-  assert.equal(byName['Courier Co'].Mode, 'Courier'); assert.equal(byName['Courier Co'].Status, 'Shipping'); assert.equal(byName['Courier Co']['Distribution Status'], 'Given'); ok('courier row values');
+  assert.equal(byName['Courier Co'].Mode, 'Courier'); assert.equal(byName['Courier Co'].Status, 'Shipping'); assert.equal(byName['Courier Co']['Distribution Status'], 'In Progress'); ok('courier row values');
   assert.equal(byName['Walk-in Co'].Mode, 'In-person'); assert.equal(byName['Walk-in Co'].Status, 'Delivered'); assert.equal(byName['Walk-in Co']['Distribution Quantity'], 3); ok('in-person row values');
   assert.equal(byName['Pending Co'].Mode, ''); assert.equal(byName['Pending Co'].Status, ''); assert.equal(byName['Pending Co']['Distribution Quantity'], ''); assert.equal(byName['Pending Co']['Distribution Status'], 'Not Given');
   ok('undistributed row has blank mode/status/quantity');
@@ -52,11 +52,11 @@ async function main() {
   assert.equal(labelled('Type')[1], 'All Types'); assert.equal((summary.find(c => c[3] === 'Requestee Name') as unknown[])[4], 'All Requestees');
   ok('summary describes the active Type / Requestee filters');
   const kpiRow = summary.findIndex(cells => cells[2] === 'Total Quantity'); const kpiTitles = summary[kpiRow] as unknown[], kpiValues = summary[kpiRow + 1] as unknown[];
-  assert.deepEqual([kpiTitles[2], kpiTitles[4], kpiTitles[6]], ['Total Quantity', 'Given Quantity', 'Pending Quantity']);
-  assert.deepEqual([kpiValues[2], kpiValues[4], kpiValues[6]], [15, 10, 5]); // given 2 + 3 + 5 (legacy counts the fixed 5), pending 1 client x 5
+  assert.deepEqual([kpiTitles[2], kpiTitles[4], kpiTitles[6], kpiTitles[8]], ['Total Quantity', 'Given Quantity', 'In Progress Quantity', 'Pending Quantity']);
+  assert.deepEqual([kpiValues[2], kpiValues[4], kpiValues[6], kpiValues[8]], [5, 3, 2, 0]); // given 3 (legacy record has no stored quantity, so 0), in progress 2, pending 0 (nothing assumed for an unsaved client)
   const statusRows = summary.filter(cells => cells[0] === 'Given' || cells[0] === 'Not Given') as unknown[][];
-  assert.deepEqual(statusRows.slice(0, 2).map(cells => [cells[0], cells[1], cells[2]]), [['Given', 3, 10], ['Not Given', 1, 5]]);
-  ok('summary shows Total / Given / Pending quantity (total = given + pending) and quantity per status');
+  assert.deepEqual(statusRows.slice(0, 2).map(cells => [cells[0], cells[1], cells[2]]), [['Given', 2, 3], ['Not Given', 1, 0]]);
+  ok('summary shows Total / Given / Pending quantity (total = given + in progress + pending; no assumed quantity) and quantity per status');
   const filtered = await read([records[0]], { type: 'Vendor', mode: 'COURIER', deliveryStatus: 'SHIPPING', search: 'Courier' });
   const modeCell = filtered.summary.find(cells => cells[3] === 'Mode / Stage') as unknown[];
   assert.equal(modeCell[4], 'Courier - Shipping'); assert.equal((filtered.summary.find(cells => cells[0] === 'Type') as unknown[])[1], 'Vendor');
@@ -66,7 +66,7 @@ async function main() {
 
   const types = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets['Type Analytics'], { defval: '' });
   assert.deepEqual(types.map(row => row.Type), ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official']);
-  assert.equal(types.find(row => row.Type === 'Vendor')!['Given'], 1); assert.equal(types.find(row => row.Type === 'Bank Official')!['Not Given'], 1); ok('Type analytics lists the five Types with correct Given / Not Given counts');
+  assert.equal(types.find(row => row.Type === 'Vendor')!['Given'], 0); assert.equal(types.find(row => row.Type === 'Vendor')!['In Progress'], 1); assert.equal(types.find(row => row.Type === 'Bank Official')!['Not Given'], 1); ok('Type analytics lists the five Types with correct Given / Not Given counts');
 
   const empty = await read([]); assert.equal(empty.details.length, 0); assert.deepEqual(Object.keys(empty.workbook.Sheets).length, 4); ok('an empty result still produces a valid workbook');
   console.log(`\n${passed} checks passed`);

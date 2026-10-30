@@ -21,8 +21,10 @@ export const nextStatus = (mode: DistributionMode, current: DeliveryStatus): Del
   return index >= 0 && index < flow.length - 1 ? flow[index + 1] : null;
 };
 
-// Every distribution is exactly this many sweets. It is set here, never taken from the request.
-export const DISTRIBUTION_QUANTITY = 5;
+// The quantity of a new distribution is chosen by the user: a whole number from 1 to MAX_DISTRIBUTION_QUANTITY. No default.
+export const MAX_DISTRIBUTION_QUANTITY = 10000;
+export const parseQuantity = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_DISTRIBUTION_QUANTITY ? value : null;
 // Fixed cap (not env-configurable) so the frontend and backend always agree.
 export const MIN_ADDRESS_LENGTH = 5;
 export const MAX_ADDRESS_LENGTH = 500;

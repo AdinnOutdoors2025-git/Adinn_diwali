@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getDistributionRecords,
+  getDistributionAnalytics,
   createDistribution,
   updateDeliveryStatus,
   getDeliveryProof,
@@ -14,6 +15,7 @@ const router = Router();
 
 router.use(authenticate);
 router.get('/', getDistributionRecords);
+router.get('/analytics', getDistributionAnalytics);
 router.post('/', createDistribution);
 router.patch('/:id/status', authorizeRole('STAFF', 'CMD'), uploadProof, updateDeliveryStatus);
 router.get('/:id/proof', authorizeRole('STAFF', 'CMD'), getDeliveryProof);

@@ -33,6 +33,18 @@ export interface ClientRecord {
   updatedAt?: string;
 }
 
+export interface DistributionAnalytics {
+  year: number;
+  occasion: string;
+  totalEntries: number;
+  delivered: number;
+  pending: number;
+  totalQuantity: number;
+  deliveredQuantity: number;
+  pendingQuantity: number;
+  generatedAt: string;
+}
+
 export interface Occasion {
   _id: string;
   name: string;
@@ -58,6 +70,8 @@ export interface DistributionRow {
   clientEmail: string;
   type: ClientType | null;
   bd: BD | null;
+  /** Quantity saved on the client; null for clients created before it existed. */
+  clientQuantity?: number | null;
   associations: { _id: string; type: ClientType | null; legacyVertical: string | null; bd: BD | null }[];
   createdAt: string;
   /** Earlier distributions to this client for the selected occasion and year that were reverted, newest revert first. */

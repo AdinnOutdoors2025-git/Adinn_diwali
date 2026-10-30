@@ -30,7 +30,7 @@ async function main() {
   };
   try {
     const [bd1, bd2] = await BD.create([{ name: 'BD One', email: 'one@adinn.com' }, { name: 'BD Two', email: 'two@adinn.com' }]);
-    const abc = { name: 'ABC Technologies', mobile: '9876500001', type: 'Vendor', bd: String(bd1._id) };
+    const abc = { name: 'ABC Technologies', mobile: '9876500001', type: 'Vendor', quantity: 3, bd: String(bd1._id) };
 
     // Global client identity
     assert.equal((await call('POST', '/clients', abc)).status, 201);
@@ -41,32 +41,32 @@ async function main() {
       ['extra internal spaces', 'ABC   Technologies', '9000000004'],
     ];
     for (const [label, name, mobile] of variants) {
-      const r = await call('POST', '/clients', { ...abc, name, mobile });
+      const r = await call('POST', '/clients', { quantity: 3, ...abc, name, mobile });
       assert.equal(r.status, 409, label); assert.equal(r.body.code, 'CLIENT_EXISTS'); assert.equal(r.body.matchedBy, 'name');
       assert.equal(await Client.countDocuments(), 1, label);
       ok(`duplicate with ${label} (new phone) is detected, no second client`);
     }
     // Client identity has no year, so a 2027 registration attempt goes through the same check.
-    const again = await call('POST', '/clients', { ...abc, mobile: '9876500001' });
+    const again = await call('POST', '/clients', { quantity: 3, ...abc, mobile: '9876500001' });
     assert.equal(again.status, 409); assert.equal(again.body.matchedBy, 'mobile'); assert.equal(await Client.countDocuments(), 1);
     ok('2027 re-registration attempt (same phone) finds the existing client');
-    const different = await call('POST', '/clients', { name: 'ABC Technology Solutions', mobile: '9876500002', type: 'Vendor', bd: String(bd1._id) });
+    const different = await call('POST', '/clients', { quantity: 3, name: 'ABC Technology Solutions', mobile: '9876500002', type: 'Vendor', bd: String(bd1._id) });
     assert.equal(different.status, 201); assert.equal(await Client.countDocuments(), 2);
     ok('a similar-but-different business ("ABC Technology Solutions") is NOT merged');
 
     // Existing-client workflow
-    let r = await call('POST', '/clients', { ...abc, confirmExisting: true });
+    let r = await call('POST', '/clients', { quantity: 3, ...abc, confirmExisting: true });
     assert.equal(r.status, 409); assert.equal(r.body.code, 'ASSOCIATION_EXISTS');
     assert.equal(await ClientAssociation.countDocuments({ type: 'Vendor' }), 2);
     ok('existing client + same Type + Requestee reuses the association (no duplicate)');
-    r = await call('POST', '/clients', { ...abc, type: 'Client', bd: String(bd2._id), confirmExisting: true });
+    r = await call('POST', '/clients', { quantity: 3, ...abc, type: 'Client', bd: String(bd2._id), confirmExisting: true });
     assert.equal(r.status, 201); assert.equal(await Client.countDocuments(), 2);
     assert.equal(await ClientAssociation.countDocuments({ client: r.body.data.clientId }), 2);
     ok('existing client + new Type/Requestee adds only an association');
 
     // Concurrency
     const race = await Promise.all(Array.from({ length: 10 }, (_, i) => call('POST', '/clients',
-      { name: i % 2 ? 'Race Co' : '  race co ', mobile: i % 2 ? '9111111111' : '9222222222', type: 'Govt. Official', bd: String(bd1._id) })));
+      { quantity: 3, name: i % 2 ? 'Race Co' : '  race co ', mobile: i % 2 ? '9111111111' : '9222222222', type: 'Govt. Official', bd: String(bd1._id) })));
     assert.ok(race.every(x => [201, 409].includes(x.status)), JSON.stringify(race.map(x => x.status)));
     assert.equal(await Client.countDocuments({ normalizedName: 'race co' }), 1);
     ok('10 concurrent registrations (mixed case and phones) create exactly one "Race Co"');

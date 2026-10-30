@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Gift, CheckCircle2, Clock, MapPin, Truck, User, RotateCcw } from 'lucide-react';
 import { DistributionRow } from '../types';
-import { DISTRIBUTION_QUANTITY, MODE_LABEL, STATUS_LABEL } from '../config/distribution';
+import { MODE_LABEL, STATUS_LABEL } from '../config/distribution';
 
 const dash = '—';
 const dateLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : dash;
@@ -76,7 +76,7 @@ export const DistributionDetailsModal: React.FC<Props> = ({ row, year, occasion,
             <div className={`grid grid-cols-1 gap-3 ${delivered ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
               <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4">
                 <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-amber-700"><Gift className="w-3.5 h-3.5" />Quantity</p>
-                <p className="mt-1.5 text-2xl font-bold text-slate-900" data-field="Quantity">{dist?.quantity ?? DISTRIBUTION_QUANTITY}</p>
+                <p className="mt-1.5 text-2xl font-bold text-slate-900" data-field="Quantity">{dist?.quantity ?? '—'}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><Clock className="w-3.5 h-3.5" />Status</p>

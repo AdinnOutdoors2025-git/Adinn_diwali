@@ -13,8 +13,8 @@ export const STATUS_FLOW: Record<DistributionMode, readonly DeliveryStatus[]> = 
   IN_PERSON: ['INITIATE', 'DELIVERED'],
 };
 
-// Every distribution is exactly this many; the server sets it, so it cannot be edited from the browser.
-export const DISTRIBUTION_QUANTITY = 5;
+// Quantity is chosen per distribution (default 0 in the form, must be above 0 to save); the server enforces the same range.
+export const MAX_DISTRIBUTION_QUANTITY = 10000;
 export const MIN_ADDRESS_LENGTH = 5;
 export const MAX_ADDRESS_LENGTH = 500;
 export const MAX_PROOF_MB = 2;
