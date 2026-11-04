@@ -1,5 +1,5 @@
 // Mirrors backend/src/config/distribution.ts. The backend remains the authority; these drive the UI only.
-export const TYPE_OPTIONS = ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official'] as const;
+export const TYPE_OPTIONS = ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official', 'CMD'] as const;
 export type ClientType = typeof TYPE_OPTIONS[number];
 
 export const MODE_OPTIONS = ['COURIER', 'IN_PERSON'] as const;

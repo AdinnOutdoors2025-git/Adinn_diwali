@@ -1,4 +1,4 @@
-export const CLIENT_TYPES = ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official'] as const;
+export const CLIENT_TYPES = ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official', 'CMD'] as const;
 export type ClientType = typeof CLIENT_TYPES[number];
 export const isClientType = (value: unknown): value is ClientType => CLIENT_TYPES.includes(value as ClientType);
 

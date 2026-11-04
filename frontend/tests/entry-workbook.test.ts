@@ -65,8 +65,8 @@ async function main() {
   assert.equal((inPerson.summary.find(cells => cells[3] === 'Mode / Stage') as unknown[])[4], 'In-person - all stages'); ok('mode filter without a stage is described correctly');
 
   const types = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets['Type Analytics'], { defval: '' });
-  assert.deepEqual(types.map(row => row.Type), ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official']);
-  assert.equal(types.find(row => row.Type === 'Vendor')!['Given'], 0); assert.equal(types.find(row => row.Type === 'Vendor')!['In Progress'], 1); assert.equal(types.find(row => row.Type === 'Bank Official')!['Not Given'], 1); ok('Type analytics lists the five Types with correct Given / Not Given counts');
+  assert.deepEqual(types.map(row => row.Type), ['Vendor', 'Client', 'Govt. Official', 'OOH Landlords', 'Bank Official', 'CMD']);
+  assert.equal(types.find(row => row.Type === 'Vendor')!['Given'], 0); assert.equal(types.find(row => row.Type === 'Vendor')!['In Progress'], 1); assert.equal(types.find(row => row.Type === 'Bank Official')!['Not Given'], 1); ok('Type analytics lists the six Types with correct Given / Not Given counts');
 
   const empty = await read([]); assert.equal(empty.details.length, 0); assert.deepEqual(Object.keys(empty.workbook.Sheets).length, 4); ok('an empty result still produces a valid workbook');
   console.log(`\n${passed} checks passed`);
